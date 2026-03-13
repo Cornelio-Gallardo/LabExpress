@@ -12,18 +12,18 @@
         </div>
         <div class="flex gap-2">
           <button v-if="auth.canExport" class="btn-excel" @click="exportCsv">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
             Export CSV
           </button>
           <button v-if="auth.canPrint" class="btn-pdf" @click="showPrintModal = true; printMode = 'download'">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>
             Download PDF
           </button>
           <button v-if="auth.canPrint" class="btn-print" @click="showPrintModal = true; printMode = 'print'">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
             Print
           </button>
-          <router-link to="/dashboard" class="btn btn-outline btn-sm">← Back</router-link>
+          <router-link to="/shifts" class="btn btn-outline btn-sm">← Back</router-link>
         </div>
       </div>
     </div>
@@ -32,85 +32,101 @@
       Results are displayed as-is from the laboratory source. No interpretation. No risk labels. Data only.
     </div>
 
-    <div v-if="loadError" class="error-bar">⚠ {{ loadError }}</div>
+    <div v-if="loadError" style="background:#fee2e2; border:1px solid #fca5a5; color:#dc2626; padding:12px 16px; border-radius:8px; margin-bottom:16px; font-size:13px; font-weight:600;">
+      ⚠ {{ loadError }}
+    </div>
+
     <div v-if="loading" class="loading">Loading results…</div>
 
     <div v-else style="display:grid; grid-template-columns:1fr 340px; gap:20px; align-items:start">
 
-      <!-- LEFT: Unified Lab Results table (from CDM chain) -->
-      <div class="table-card">
-        <div class="card-header">
-          <div>
-            <div class="card-title">Lab Results</div>
-            <div class="text-slate text-sm">
-              {{ analyteRows.length }} analytes · {{ resultDates.length }} result date{{ resultDates.length !== 1 ? 's' : '' }}
+      <!-- LEFT: Results -->
+      <div>
+        <!-- Priority Labs -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header">
+            <div class="card-title">⚡ Priority Labs</div>
+            <div class="text-slate text-sm">Potassium · Phosphorus · Hemoglobin</div>
+          </div>
+          <div class="card-body" style="display:grid; grid-template-columns:repeat(3,1fr); gap:16px">
+            <div v-for="code in ['K', 'PHOS', 'HGB']" :key="code">
+              <div v-if="resultsByCode[code]" class="stat-card">
+                <div class="stat-label">{{ resultsByCode[code].testName }}</div>
+                <div class="stat-value" :class="flagClass(resultsByCode[code].abnormalFlag)">
+                  {{ resultsByCode[code].resultValue }}
+                  <span class="stat-unit">{{ resultsByCode[code].resultUnit }}</span>
+                </div>
+                <div class="stat-meta">
+                  <span v-if="resultsByCode[code].abnormalFlag" class="badge" :class="resultsByCode[code].abnormalFlag === 'H' ? 'badge-h' : 'badge-l'">
+                    {{ resultsByCode[code].abnormalFlag }}
+                  </span>
+                  <span class="text-slate text-sm">{{ daysSince(resultsByCode[code].daysSince) }}</span>
+                </div>
+              </div>
+              <div v-else class="stat-card stat-empty">
+                <div class="stat-label">{{ code }}</div>
+                <div style="color:var(--slate); font-size:13px">No result</div>
+              </div>
             </div>
           </div>
-          <div style="display:flex; align-items:center; gap:10px">
-            <label class="compare-label">Show last</label>
-            <select v-model="showCount" class="compare-select">
-              <option :value="1">1 date</option>
-              <option :value="2">2 dates</option>
-              <option :value="3">3 dates</option>
-              <option :value="5">5 dates</option>
-            </select>
-          </div>
         </div>
 
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th style="min-width:170px">Analyte</th>
-                <th style="min-width:55px">Unit</th>
-                <th style="min-width:90px">Ref Range</th>
-                <th v-for="(col, i) in visibleDates" :key="col.date" class="date-col-header" :class="{ 'col-latest': i === 0 }">
-                  <div>{{ col.date }}</div>
-                  <div class="accession-sub" :title="`Accession: ${col.accession}`">{{ col.accession }}</div>
-                  <div v-if="i === 0" class="latest-badge">latest</div>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <!-- Group by test panel -->
-              <template v-for="group in groupedRows" :key="group.label">
-                <tr class="group-row">
-                  <td :colspan="3 + visibleDates.length">{{ group.label }}</td>
+        <!-- Full results table -->
+        <div class="table-card">
+          <div class="card-header">
+            <div class="card-title">All Lab Results</div>
+            <div class="text-slate text-sm">{{ results.length }} tests · Pass-through from HL7</div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Test</th>
+                  <th>Value</th>
+                  <th>Unit</th>
+                  <th>Flag</th>
+                  <th>Reference</th>
+                  <th>Date</th>
+                  <th>Source</th>
                 </tr>
-                <tr v-for="row in group.analytes" :key="row.analyteCode">
+              </thead>
+              <tbody>
+                <tr v-for="r in results" :key="r.id">
                   <td>
-                    <div style="font-weight:500">{{ row.displayName }}</div>
-                    <div class="text-slate" style="font-size:10px; font-family:monospace">{{ row.analyteCode }}</div>
+                    <div style="font-weight:500">{{ r.testName }}</div>
+                    <div class="text-slate" style="font-size:11px">{{ r.testCode }}</div>
                   </td>
-                  <td class="text-slate text-sm">{{ row.unit || '—' }}</td>
-                  <td class="text-slate text-sm">{{ row.refRange || '—' }}</td>
-                  <td v-for="(col, i) in visibleDates" :key="col.date" :class="{ 'col-latest': i === 0 }">
-                    <template v-if="row.byDate[col.date]">
-                      <span class="result-val" :class="flagClass(row.byDate[col.date].flag)">
-                        {{ row.byDate[col.date].value }}
-                      </span>
-                      <span v-if="row.byDate[col.date].flag" class="flag-badge" :class="row.byDate[col.date].flag === 'H' ? 'badge-h' : 'badge-l'">
-                        {{ row.byDate[col.date].flag }}
-                      </span>
-                    </template>
+                  <td>
+                    <span class="result-value" :class="flagClass(r.abnormalFlag)">
+                      {{ r.resultValue || '—' }}
+                    </span>
+                  </td>
+                  <td class="text-slate text-sm">{{ r.resultUnit || '—' }}</td>
+                  <td>
+                    <span v-if="r.abnormalFlag" class="badge" :class="r.abnormalFlag === 'H' ? 'badge-h' : 'badge-l'">
+                      {{ r.abnormalFlag }}
+                    </span>
                     <span v-else class="text-slate">—</span>
                   </td>
+                  <td class="text-slate text-sm">{{ r.referenceRange || '—' }}</td>
+                  <td>
+                    <div class="text-sm">{{ r.resultDate }}</div>
+                    <div v-if="r.daysSince > 30" class="stale-indicator">⚠ {{ r.daysSince }}d ago</div>
+                    <div v-else class="text-sm text-slate">{{ daysSince(r.daysSince) }}</div>
+                  </td>
+                  <td class="text-slate text-sm">{{ r.sourceLab || '—' }}</td>
                 </tr>
-              </template>
-              <tr v-if="analyteRows.length === 0">
-                <td colspan="20" style="text-align:center; padding:40px; color:var(--slate)">
-                  No lab results found for this patient.
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div class="table-footer">
-          <span>{{ analyteRows.length }} analyte{{ analyteRows.length !== 1 ? 's' : '' }}</span>
-          <span v-if="resultDates.length" style="color:var(--slate)">
-            · Orders: {{ orders.length }}
-          </span>
+                <tr v-if="results.length === 0">
+                  <td colspan="7" style="text-align:center; padding:40px; color:var(--slate)">
+                    No results found for this patient
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="table-footer">
+            <span>Showing {{ results.length }} result{{ results.length !== 1 ? 's' : '' }}</span>
+          </div>
         </div>
       </div>
 
@@ -147,7 +163,9 @@
       </div>
     </div>
 
-    <!-- PRINT / PDF MODAL -->
+    <!-- ══════════════════════════════════════════
+         PRINT / PDF MODAL
+    ══════════════════════════════════════════ -->
     <div v-if="showPrintModal" class="modal-backdrop" @click.self="showPrintModal = false">
       <div class="modal" style="width:680px; max-height:90vh">
         <div class="modal-header">
@@ -157,8 +175,13 @@
           </div>
           <button class="modal-close" @click="showPrintModal = false">✕</button>
         </div>
+
+        <!-- Print options -->
         <div class="modal-body" style="padding-bottom:0">
           <div style="display:flex; gap:10px; margin-bottom:18px; flex-wrap:wrap">
+            <label class="print-opt" :class="{ active: printOpts.priority }">
+              <input type="checkbox" v-model="printOpts.priority" /> Priority Labs
+            </label>
             <label class="print-opt" :class="{ active: printOpts.allResults }">
               <input type="checkbox" v-model="printOpts.allResults" /> All Results
             </label>
@@ -167,49 +190,97 @@
             </label>
           </div>
         </div>
+
+        <!-- Preview area -->
         <div class="modal-body" style="padding-top:0; overflow-y:auto; max-height:55vh">
           <div id="print-preview" class="print-preview">
+
+            <!-- Report Header -->
             <div class="pr-header">
               <div class="pr-logo">DX7</div>
-              <div>
+              <div class="pr-header-info">
                 <div class="pr-clinic">{{ auth.tenant?.name }} — {{ auth.client?.name }}</div>
                 <div class="pr-meta">Lab Results Report · Printed {{ printDate }}</div>
               </div>
             </div>
+
+            <!-- Patient info bar -->
             <div class="pr-patient-bar">
-              <div class="pr-patient-detail"><span class="pr-label">Patient</span><span class="pr-val">{{ session?.patientName }}</span></div>
-              <div class="pr-patient-detail"><span class="pr-label">Session Date</span><span class="pr-val">{{ session?.sessionDate }}</span></div>
-              <div class="pr-patient-detail"><span class="pr-label">Shift</span><span class="pr-val">{{ session?.shiftNumber }}</span></div>
-              <div class="pr-patient-detail" v-if="session?.chair"><span class="pr-label">Chair</span><span class="pr-val">{{ session.chair }}</span></div>
-              <div class="pr-patient-detail"><span class="pr-label">Printed by</span><span class="pr-val">{{ auth.user?.name }}</span></div>
+              <div class="pr-patient-detail">
+                <span class="pr-label">Patient</span>
+                <span class="pr-val">{{ session?.patientName }}</span>
+              </div>
+              <div class="pr-patient-detail">
+                <span class="pr-label">Session Date</span>
+                <span class="pr-val">{{ session?.sessionDate }}</span>
+              </div>
+              <div class="pr-patient-detail">
+                <span class="pr-label">Shift</span>
+                <span class="pr-val">{{ session?.shiftNumber }}</span>
+              </div>
+              <div class="pr-patient-detail" v-if="session?.chair">
+                <span class="pr-label">Chair</span>
+                <span class="pr-val">{{ session.chair }}</span>
+              </div>
+              <div class="pr-patient-detail">
+                <span class="pr-label">Printed by</span>
+                <span class="pr-val">{{ auth.user?.name }}</span>
+              </div>
             </div>
-            <div v-if="printOpts.allResults && analyteRows.length">
-              <div class="pr-section-title">Lab Results</div>
+
+            <!-- Priority Labs section -->
+            <div v-if="printOpts.priority">
+              <div class="pr-section-title">Priority Labs</div>
+              <div class="pr-priority-grid">
+                <div v-for="code in ['K', 'PHOS', 'HGB']" :key="code" class="pr-priority-cell">
+                  <div class="pr-test-name">{{ resultsByCode[code]?.testName || code }}</div>
+                  <div class="pr-val-big" :class="flagClass(resultsByCode[code]?.abnormalFlag)">
+                    {{ resultsByCode[code]?.resultValue || '—' }}
+                    <span class="pr-unit">{{ resultsByCode[code]?.resultUnit }}</span>
+                  </div>
+                  <div v-if="resultsByCode[code]?.abnormalFlag" class="pr-flag" :class="resultsByCode[code].abnormalFlag === 'H' ? 'pr-flag-h' : 'pr-flag-l'">
+                    {{ resultsByCode[code].abnormalFlag === 'H' ? '▲ HIGH' : '▼ LOW' }}
+                  </div>
+                  <div class="pr-ref">{{ resultsByCode[code]?.referenceRange || '' }}</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- All Results table -->
+            <div v-if="printOpts.allResults && results.length">
+              <div class="pr-section-title">All Lab Results</div>
               <table class="pr-table">
                 <thead>
                   <tr>
-                    <th>Analyte</th>
+                    <th>Test</th>
+                    <th>Code</th>
+                    <th>Value</th>
                     <th>Unit</th>
-                    <th>Ref Range</th>
-                    <th v-for="col in visibleDates" :key="col.date">{{ col.date }}<br><small>{{ col.accession }}</small></th>
+                    <th>Flag</th>
+                    <th>Reference Range</th>
+                    <th>Date</th>
+                    <th>Source</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <template v-for="group in groupedRows" :key="group.label">
-                    <tr class="pr-group-row"><td :colspan="3 + visibleDates.length">{{ group.label }}</td></tr>
-                    <tr v-for="row in group.analytes" :key="row.analyteCode">
-                      <td>{{ row.displayName }}</td>
-                      <td>{{ row.unit || '—' }}</td>
-                      <td>{{ row.refRange || '—' }}</td>
-                      <td v-for="col in visibleDates" :key="col.date" class="pr-result" :class="row.byDate[col.date]?.flag === 'H' ? 'pr-flag-h' : row.byDate[col.date]?.flag === 'L' ? 'pr-flag-l' : ''">
-                        {{ row.byDate[col.date]?.value || '—' }}
-                        <span v-if="row.byDate[col.date]?.flag"> {{ row.byDate[col.date].flag }}</span>
-                      </td>
-                    </tr>
-                  </template>
+                  <tr v-for="r in results" :key="r.id" :class="r.abnormalFlag ? 'pr-row-flag' : ''">
+                    <td>{{ r.testName }}</td>
+                    <td class="pr-code">{{ r.testCode }}</td>
+                    <td class="pr-result" :class="flagClass(r.abnormalFlag)">{{ r.resultValue || '—' }}</td>
+                    <td>{{ r.resultUnit || '—' }}</td>
+                    <td>
+                      <span v-if="r.abnormalFlag" :class="r.abnormalFlag === 'H' ? 'pr-flag-h' : 'pr-flag-l'">{{ r.abnormalFlag }}</span>
+                      <span v-else>—</span>
+                    </td>
+                    <td>{{ r.referenceRange || '—' }}</td>
+                    <td>{{ r.resultDate }}</td>
+                    <td>{{ r.sourceLab || '—' }}</td>
+                  </tr>
                 </tbody>
               </table>
             </div>
+
+            <!-- MD Notes -->
             <div v-if="printOpts.notes && notes.length">
               <div class="pr-section-title">MD Notes</div>
               <div v-for="note in notes" :key="note.id" class="pr-note">
@@ -217,21 +288,38 @@
                 <div class="pr-note-body">{{ note.noteText }}</div>
               </div>
             </div>
+
+            <!-- Footer -->
             <div class="pr-footer">
-              Generated by Dx7 Clinical Information System · {{ auth.tenant?.name }}. For clinical use only.
+              This report was generated by Dx7 Clinical Information System · {{ auth.tenant?.name }}.
+              For clinical use only. Not for distribution.
             </div>
           </div>
         </div>
+
         <div class="modal-footer">
           <button class="btn btn-outline" @click="showPrintModal = false">Cancel</button>
           <button v-if="printMode === 'download'" class="btn btn-primary" @click="downloadPdf" :disabled="pdfLoading">
+            <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor" style="margin-right:5px;vertical-align:-2px"><path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H6zm5 6a1 1 0 10-2 0v3.586l-1.293-1.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V8z" clip-rule="evenodd"/></svg>
             {{ pdfLoading ? 'Generating…' : 'Download PDF' }}
           </button>
           <button v-if="printMode === 'print'" class="btn btn-primary" @click="printReport">🖨️ Print</button>
         </div>
       </div>
     </div>
+
   </div>
+  <!-- Result Report Modal -->
+  <ResultReportModal
+    v-if="showReport"
+    :patientName="session?.patientName || ''"
+    :philhealthNo="session?.philhealthNo || ''"
+    :birthdate="session?.birthdate || ''"
+    :gender="session?.gender || ''"
+    :results="results"
+    :reportDate="session?.sessionDate || today"
+    @close="showReport = false"
+  />
 </template>
 
 <script setup>
@@ -243,89 +331,31 @@ import { sessionsApi, resultsApi, notesApi, exportApi } from '../services/api'
 const auth      = useAuthStore()
 const route     = useRoute()
 const sessionId = route.params.sessionId
+const today = new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })
 
-const session   = ref(null)
-const orders    = ref([])   // raw CDM orders
-const notes     = ref([])
-const loading   = ref(false)
-const loadError = ref('')
-const showCount = ref(3)
-
+const session      = ref(null)
+const results      = ref([])
+const notes        = ref([])
+const loading      = ref(false)
+const loadError    = ref('')
 const newNote      = ref('')
 const editingNote  = ref(null)
 const editNoteText = ref('')
+const showReport = ref(false)
 const showPrintModal = ref(false)
-const printMode    = ref('print')
-const pdfLoading   = ref(false)
-const printOpts    = reactive({ allResults: true, notes: true })
-const printDate    = new Date().toLocaleString('en-PH', { dateStyle: 'long', timeStyle: 'short' })
+const printMode = ref('print') // 'print' | 'download'
 
-// ── Derived: all distinct result dates across all orders, newest first ────────
-const resultDates = computed(() => {
-  const seen = new Set()
-  const dates = []
-  for (const order of orders.value) {
-    for (const header of order.headers ?? []) {
-      if (!header.resultDatetime) continue
-      const d = header.resultDatetime.slice(0, 10)
-      if (!seen.has(d)) { seen.add(d); dates.push({ date: d, accession: order.accessionNumber, releasedAt: order.releasedAt }) }
-    }
-  }
-  return dates.sort((a, b) => b.date.localeCompare(a.date))
-})
+const printOpts = reactive({ priority: true, allResults: true, notes: true })
+const printDate = new Date().toLocaleString('en-PH', { dateStyle: 'long', timeStyle: 'short' })
 
-const visibleDates = computed(() => resultDates.value.slice(0, showCount.value))
+const resultsByCode = computed(() =>
+  Object.fromEntries(results.value.map(r => [r.testCode, r]))
+)
 
-// ── Derived: analyte rows keyed by SXA analyte code ─────────────────────────
-const analyteRows = computed(() => {
-  const map = {}
-  for (const order of orders.value) {
-    for (const header of order.headers ?? []) {
-      if (!header.resultDatetime) continue
-      const dateKey = header.resultDatetime.slice(0, 10)
-      const panel   = header.sxaTestId ?? 'OTHER'
-      for (const val of header.values ?? []) {
-        const key = val.analyteCode ?? val.id
-        if (!map[key]) {
-          map[key] = {
-            analyteCode: val.analyteCode,
-            displayName: val.analyteDisplayName ?? val.analyteCode ?? '—',
-            unit:        val.unit,
-            refRange:    val.referenceRangeLow != null && val.referenceRangeHigh != null
-                           ? `${val.referenceRangeLow}–${val.referenceRangeHigh}`
-                           : val.referenceRangeRaw,
-            panel,
-            byDate: {}
-          }
-        }
-        map[key].byDate[dateKey] = { value: val.displayValue, flag: val.abnormalFlag }
-      }
-    }
-  }
-  return Object.values(map)
-})
-
-// Group by panel (CBC, CHEM, etc.) based on SXA test id
-const groupedRows = computed(() => {
-  const groups = {}
-  for (const row of analyteRows.value) {
-    const label = panelLabel(row.panel)
-    if (!groups[label]) groups[label] = { label, analytes: [] }
-    groups[label].analytes.push(row)
-  }
-  // Sort analytes within each group
-  for (const g of Object.values(groups))
-    g.analytes.sort((a, b) => (a.displayName ?? '').localeCompare(b.displayName ?? ''))
-  return Object.values(groups).sort((a, b) => a.label.localeCompare(b.label))
-})
-
-function panelLabel(sxaTestId) {
-  if (!sxaTestId) return 'Other'
-  if (sxaTestId.includes('CBC')) return 'CBC — Complete Blood Count'
-  if (sxaTestId.includes('BUN')) return 'BUN — Blood Urea Nitrogen'
-  if (sxaTestId.includes('FBS') || sxaTestId.includes('GLU')) return 'Glucose'
-  if (sxaTestId.includes('K'))  return 'Electrolytes'
-  return sxaTestId
+function daysSince(d) {
+  if (d === 0) return 'Today'
+  if (d === 1) return '1 day ago'
+  return `${d} days ago`
 }
 
 function flagClass(flag) {
@@ -335,84 +365,54 @@ function flagClass(flag) {
 }
 
 function formatDate(dt) {
-  if (!dt) return '—'
   return new Date(dt).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })
 }
 
-// ── Load ──────────────────────────────────────────────────────────────────────
-async function loadSession() {
-  loading.value = true
-  loadError.value = ''
-  try {
-    const { data } = await sessionsApi.getById(sessionId)
-    session.value = data
-    if (session.value) {
-      await Promise.all([
-        resultsApi.getOrders(session.value.patientId).then(r => { orders.value = r.data }),
-        notesApi.getBySession(sessionId).then(r => { notes.value = r.data })
-      ])
-    }
-  } catch (e) {
-    loadError.value = `Error ${e.response?.status}: ${e.response?.data?.message || e.message}`
-  } finally { loading.value = false }
-}
-
-// ── Notes ─────────────────────────────────────────────────────────────────────
-async function saveNote() {
-  if (!newNote.value.trim()) return
-  await notesApi.create({ sessionId, noteText: newNote.value })
-  newNote.value = ''
-  const { data } = await notesApi.getBySession(sessionId)
-  notes.value = data
-}
-function startEditNote(note) { editingNote.value = note.id; editNoteText.value = note.noteText }
-async function updateNote(note) {
-  await notesApi.update(note.id, editNoteText.value)
-  note.noteText = editNoteText.value
-  editingNote.value = null
-}
-
-// ── Export CSV ────────────────────────────────────────────────────────────────
-async function exportCsv() {
-  if (!session.value) return
-  const todayStr = new Date().toISOString().split('T')[0]
-  const { data } = await exportApi.export({
-    patientIds: [session.value.patientId],
-    fromDate: '2024-01-01', toDate: todayStr,
-    testCodes: null, format: 'csv'
-  })
-  const url = URL.createObjectURL(new Blob([data]))
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `dx7_${session.value.patientName.replace(/ /g, '_')}.csv`
-  a.click(); URL.revokeObjectURL(url)
-}
-
-// ── Print / PDF ───────────────────────────────────────────────────────────────
+// ── Shared: build full HTML document for print/PDF ──
 function buildPrintHtml(content, title) {
-  return `<!DOCTYPE html><html><head><title>${title}</title><style>
-    *{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:11px;color:#111827;padding:20px}
-    .pr-header{display:flex;align-items:center;gap:16px;background:linear-gradient(135deg,#1e3a8a,#2563eb);border-radius:8px;padding:14px 18px;margin-bottom:14px}
-    .pr-logo{font-size:26px;font-weight:900;color:white;letter-spacing:-1px}
-    .pr-clinic{font-size:13px;font-weight:700;color:rgba(255,255,255,0.95)}.pr-meta{font-size:10px;color:rgba(255,255,255,0.6);margin-top:2px}
-    .pr-patient-bar{display:flex;gap:0;margin-bottom:14px;border:1.5px solid #bfdbfe;border-radius:8px;overflow:hidden;background:white}
-    .pr-patient-detail{display:flex;flex-direction:column;padding:8px 14px;flex:1;border-right:1px solid #e0eaff}
-    .pr-patient-detail:last-child{border-right:none}
-    .pr-label{font-size:8px;text-transform:uppercase;letter-spacing:0.8px;color:#93c5fd;font-weight:700}
-    .pr-val{font-size:11px;font-weight:700;color:#1e3a8a;margin-top:2px}
-    .pr-section-title{font-size:9px;font-weight:800;color:#1d4ed8;text-transform:uppercase;letter-spacing:1px;padding:5px 10px;margin:12px 0 8px;background:linear-gradient(90deg,#eff6ff,transparent);border-left:3px solid #1d4ed8}
-    .pr-table{width:100%;border-collapse:collapse;font-size:10px}
-    .pr-table th{background:#f9fafb;padding:5px 7px;text-align:left;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb;font-size:9px;text-transform:uppercase}
-    .pr-table td{padding:5px 7px;border-bottom:1px solid #f3f4f6}
-    .pr-group-row td{background:#eff6ff;font-weight:700;font-size:9px;color:#1d4ed8;text-transform:uppercase;letter-spacing:0.5px;padding:4px 7px}
-    .pr-result{font-weight:700}.pr-flag-h{color:#dc2626}.pr-flag-l{color:#2563eb}
-    .pr-note{border:1px solid #e5e7eb;border-radius:5px;padding:8px 10px;margin-bottom:6px}
-    .pr-note-meta{font-size:9px;color:#6b7280;margin-bottom:3px;font-weight:600}
-    .pr-note-body{font-size:10px;color:#374151;line-height:1.5;white-space:pre-wrap}
-    .pr-footer{margin-top:16px;padding-top:8px;border-top:1px solid #e5e7eb;font-size:9px;color:#9ca3af;text-align:center}
-  </style></head><body>${content}</body></html>`
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <title>${title}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; font-size: 12px; color: #111827; padding: 24px; }
+    .pr-header { display: flex; align-items: center; gap: 16px; border-bottom: 2px solid #1d4ed8; padding-bottom: 12px; margin-bottom: 14px; }
+    .pr-logo { font-size: 28px; font-weight: 900; color: #1e3a8a; letter-spacing: -1px; }
+    .pr-clinic { font-size: 14px; font-weight: 700; color: #111827; }
+    .pr-meta { font-size: 11px; color: #6b7280; margin-top: 2px; }
+    .pr-patient-bar { display: flex; gap: 20px; background: #eff6ff; border-radius: 6px; padding: 10px 14px; margin-bottom: 16px; flex-wrap: wrap; }
+    .pr-patient-detail { display: flex; flex-direction: column; }
+    .pr-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; color: #6b7280; font-weight: 600; }
+    .pr-val { font-size: 12px; font-weight: 700; color: #111827; margin-top: 2px; }
+    .pr-section-title { font-size: 13px; font-weight: 700; color: #1e3a8a; border-bottom: 1px solid #bfdbfe; padding-bottom: 4px; margin: 16px 0 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .pr-priority-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 4px; }
+    .pr-priority-cell { border: 1.5px solid #e5e7eb; border-radius: 6px; padding: 12px; text-align: center; }
+    .pr-test-name { font-size: 10px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+    .pr-val-big { font-size: 26px; font-weight: 800; color: #111827; line-height: 1; }
+    .pr-unit { font-size: 11px; font-weight: 400; color: #6b7280; }
+    .pr-flag { font-size: 10px; font-weight: 700; margin-top: 4px; }
+    .pr-flag-h, .flag-h { color: #dc2626; }
+    .pr-flag-l, .flag-l { color: #2563eb; }
+    .pr-ref { font-size: 10px; color: #9ca3af; margin-top: 2px; }
+    .pr-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    .pr-table th { background: #f9fafb; padding: 7px 10px; text-align: left; font-weight: 600; color: #6b7280; border-bottom: 1px solid #e5e7eb; font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; }
+    .pr-table td { padding: 7px 10px; border-bottom: 1px solid #f3f4f6; }
+    .pr-row-flag { background: white; }
+    .pr-result { font-weight: 700; }
+    .pr-code { color: #9ca3af; font-size: 10px; }
+    .pr-note { border: 1px solid #e5e7eb; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; }
+    .pr-note-meta { font-size: 10px; color: #6b7280; margin-bottom: 4px; font-weight: 600; }
+    .pr-note-body { font-size: 12px; color: #374151; line-height: 1.5; white-space: pre-wrap; }
+    .pr-footer { margin-top: 24px; padding-top: 10px; border-top: 1px solid #e5e7eb; font-size: 10px; color: #9ca3af; text-align: center; }
+    @media print { body { padding: 0; } button { display: none !important; } }
+  </style>
+</head>
+<body>${content}</body>
+</html>`
 }
 
+// ── Print — uses hidden iframe to avoid popup blocker ──
 function printReport() {
   const content = document.getElementById('print-preview').innerHTML
   const html = buildPrintHtml(content, 'Lab Results — ' + (session.value?.patientName || ''))
@@ -427,94 +427,234 @@ function printReport() {
   iframe.onload = () => { iframe.contentWindow.focus(); iframe.contentWindow.print() }
 }
 
+// ── Download PDF — html2canvas + jsPDF (same approach as ResultReportModal) ──
+const pdfLoading = ref(false)
 async function downloadPdf() {
   if (pdfLoading.value) return
-  pdfLoading.value = true; showPrintModal.value = false
+  pdfLoading.value = true
+  showPrintModal.value = false
+
   const body = document.getElementById('print-preview')
   if (!body) { pdfLoading.value = false; return }
-  const name    = (session.value?.patientName || 'report').replace(/[^a-zA-Z0-9]/g, '_')
-  const filename = `DX7_Results_${name}_${session.value?.sessionDate || ''}.pdf`
-  const fullHtml = buildPrintHtml(body.innerHTML, filename).replace('</head>',
-    `<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"><\/script>
-     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"><\/script></head>`)
+
+  const patientName = (session.value?.patientName || 'report').replace(/[^a-zA-Z0-9]/g, '_')
+  const dateStr = session.value?.sessionDate || ''
+  const filename = 'DX7_Results_' + patientName + '_' + dateStr + '.pdf'
+
+  const html = buildPrintHtml(body.innerHTML, filename)
+  const fullHtml = html.replace('</head>', `
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"><\/script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"><\/script>
+  </head>`)
+
   const iframe = document.createElement('iframe')
   iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:794px;height:1123px;border:none'
   document.body.appendChild(iframe)
-  iframe.contentDocument.open(); iframe.contentDocument.write(fullHtml); iframe.contentDocument.close()
-  await new Promise(r => setTimeout(r, 1500))
+
+  iframe.contentDocument.open()
+  iframe.contentDocument.write(fullHtml)
+  iframe.contentDocument.close()
+
+  await new Promise(resolve => setTimeout(resolve, 1500))
+
   try {
     const { jsPDF } = iframe.contentWindow.jspdf
-    const canvas = await iframe.contentWindow.html2canvas(iframe.contentDocument.body, { scale: 2, useCORS: true, windowWidth: 794, width: 794 })
+    const canvas = await iframe.contentWindow.html2canvas(iframe.contentDocument.body, {
+      scale: 2, useCORS: true, windowWidth: 794, width: 794
+    })
     const imgData = canvas.toDataURL('image/jpeg', 0.95)
     const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-    const pageW = pdf.internal.pageSize.getWidth(), pageH = pdf.internal.pageSize.getHeight()
-    const imgH = (canvas.height * pageW) / canvas.width
+    const pageW = pdf.internal.pageSize.getWidth()
+    const pageH = pdf.internal.pageSize.getHeight()
+    const imgH  = (canvas.height * pageW) / canvas.width
+
     let yPos = 0, remaining = imgH
     while (remaining > 0) {
       pdf.addImage(imgData, 'JPEG', 0, -yPos, pageW, imgH)
-      remaining -= pageH; yPos += pageH
+      remaining -= pageH
+      yPos += pageH
       if (remaining > 0) pdf.addPage()
     }
-    const blob = pdf.output('blob'), url = URL.createObjectURL(blob)
-    const a = document.createElement('a'); a.href = url; a.download = filename; a.click()
-    URL.revokeObjectURL(url)
-  } catch (e) { alert('Failed to generate PDF: ' + e.message) }
-  finally { document.body.removeChild(iframe); pdfLoading.value = false }
+    const pdfBlob = pdf.output('blob')
+
+    if (window.showSaveFilePicker) {
+      try {
+        const fh = await window.showSaveFilePicker({
+          suggestedName: filename,
+          types: [{ description: 'PDF Document', accept: { 'application/pdf': ['.pdf'] } }]
+        })
+        const w = await fh.createWritable()
+        await w.write(pdfBlob)
+        await w.close()
+      } catch (e) {
+        if (e.name !== 'AbortError') {
+          const url = URL.createObjectURL(pdfBlob)
+          const a = document.createElement('a')
+          a.href = url; a.download = filename; a.click()
+          URL.revokeObjectURL(url)
+        }
+      }
+    } else {
+      const url = URL.createObjectURL(pdfBlob)
+      const a = document.createElement('a')
+      a.href = url; a.download = filename; a.click()
+      URL.revokeObjectURL(url)
+    }
+  } catch (e) {
+    alert('Failed to generate PDF: ' + e.message)
+  } finally {
+    document.body.removeChild(iframe)
+    pdfLoading.value = false
+  }
+}
+
+async function loadResults(patientId) {
+  const { data } = await resultsApi.getCurrent(patientId)
+  results.value = data
+}
+
+async function loadSession() {
+  loading.value = true
+  loadError.value = ''
+  try {
+    const { data } = await sessionsApi.getById(sessionId)
+    session.value = data
+    if (session.value) {
+      await Promise.all([
+        loadResults(session.value.patientId),
+        notesApi.getBySession(sessionId).then(r => { notes.value = r.data })
+      ])
+    }
+  } catch (e) {
+    loadError.value = `Error ${e.response?.status}: ${e.response?.data?.message || e.response?.data || e.message}`
+  } finally { loading.value = false }
+}
+
+async function saveNote() {
+  if (!newNote.value.trim()) return
+  await notesApi.create({ sessionId, noteText: newNote.value })
+  newNote.value = ''
+  const { data } = await notesApi.getBySession(sessionId)
+  notes.value = data
+}
+
+function startEditNote(note) {
+  editingNote.value = note.id
+  editNoteText.value = note.noteText
+}
+
+async function updateNote(note) {
+  await notesApi.update(note.id, editNoteText.value)
+  note.noteText = editNoteText.value
+  editingNote.value = null
+}
+
+async function exportCsv() {
+  if (!session.value) return
+  const today = new Date().toISOString().split('T')[0]
+  const { data } = await exportApi.export({
+    patientIds: [session.value.patientId],
+    fromDate: '2024-01-01', toDate: today,
+    testCodes: null, format: 'csv'
+  })
+  const url = URL.createObjectURL(new Blob([data]))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `dx7_${session.value.patientName.replace(/ /g, '_')}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 onMounted(loadSession)
 </script>
 
 <style scoped>
-/* result table */
-.compare-label  { font-size:12px; font-weight:600; color:var(--slate); white-space:nowrap; }
-.compare-select { height:32px; padding:0 10px; border:1.5px solid var(--border); border-radius:6px; font-size:13px; color:var(--navy); cursor:pointer; }
-.date-col-header { text-align:center; font-size:12px; font-weight:600; color:var(--slate); min-width:110px; }
-.date-col-header.col-latest { background:#f0f9ff; color:var(--primary-mid); }
-td.col-latest   { background:#f8fbff; }
-.accession-sub  { font-size:10px; font-family:monospace; font-weight:400; color:var(--slate); opacity:0.75; margin-top:1px; }
-.latest-badge   { display:inline-block; font-size:10px; font-weight:700; background:var(--primary-mid); color:white; border-radius:4px; padding:1px 5px; margin-top:2px; text-transform:uppercase; }
-.group-row td   { background:#eff6ff; font-size:10px; font-weight:700; color:#1d4ed8; text-transform:uppercase; letter-spacing:0.5px; padding:5px 8px; }
-.result-val     { font-weight:700; font-size:14px; color:var(--navy); }
-.result-val.flag-h { color:#dc2626; }
-.result-val.flag-l { color:#2563eb; }
-.flag-badge     { font-size:10px; font-weight:700; margin-left:3px; }
-.badge-h        { color:#dc2626; }
-.badge-l        { color:#2563eb; }
-.error-bar      { background:#fee2e2; border:1px solid #fca5a5; color:#dc2626; padding:12px 16px; border-radius:8px; margin-bottom:16px; font-size:13px; font-weight:600; }
+/* stat cards */
+.stat-card { background: var(--off-white); border: 1.5px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+.stat-card.stat-empty { opacity: 0.5; }
+.stat-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--slate); margin-bottom: 6px; }
+.stat-value { font-size: 26px; font-family: 'DM Sans', sans-serif; font-weight: 800; color: var(--navy); line-height: 1; }
+.stat-unit { font-size: 13px; font-weight: 400; color: var(--slate); margin-left: 2px; }
+.stat-meta { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
 
 /* notes */
-.note-item    { border:1.5px solid var(--border); border-radius:8px; padding:12px 14px; margin-bottom:10px; }
-.note-header  { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
-.note-body    { font-size:13.5px; color:#334155; line-height:1.5; white-space:pre-wrap; }
-.note-actions { margin-top:8px; display:flex; gap:6px; }
+.note-item { border: 1.5px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
+.note-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.note-body { font-size: 13.5px; color: #334155; line-height: 1.5; white-space: pre-wrap; }
+.note-actions { margin-top: 8px; display: flex; gap: 6px; }
 
-/* print opts */
-.print-opt { display:inline-flex; align-items:center; gap:6px; padding:6px 14px; border:1.5px solid var(--border); border-radius:20px; cursor:pointer; font-size:13px; color:var(--slate); user-select:none; }
-.print-opt input { display:none; }
-.print-opt.active { border-color:var(--primary-mid); background:var(--primary-pale); color:var(--primary-mid); font-weight:600; }
+
+/* print options checkboxes */
+.print-opt {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border: 1.5px solid var(--border); border-radius: 20px;
+  cursor: pointer; font-size: 13px; color: var(--slate);
+  transition: all 0.1s; user-select: none;
+}
+.print-opt input { display: none; }
+.print-opt.active { border-color: var(--primary-mid); background: var(--primary-pale); color: var(--primary-mid); font-weight: 600; }
 
 /* print preview */
-.print-preview { background:linear-gradient(160deg,#f0f7ff 0%,#fff 40%); border:1px solid #bfdbfe; border-radius:12px; padding:24px; font-family:'Inter',Arial,sans-serif; font-size:11px; color:#111827; }
-.pr-header { display:flex; align-items:center; gap:16px; background:linear-gradient(135deg,#1e3a8a,#2563eb); border-radius:10px; padding:14px 18px; margin-bottom:14px; }
-.pr-logo { font-size:26px; font-weight:900; color:white; letter-spacing:-1px; }
-.pr-clinic { font-size:13px; font-weight:700; color:rgba(255,255,255,.95); }
-.pr-meta { font-size:10px; color:rgba(255,255,255,.6); margin-top:2px; }
-.pr-patient-bar { display:flex; margin-bottom:14px; border:1.5px solid #bfdbfe; border-radius:8px; overflow:hidden; background:white; }
-.pr-patient-detail { display:flex; flex-direction:column; padding:8px 14px; flex:1; border-right:1px solid #e0eaff; }
-.pr-patient-detail:last-child { border-right:none; }
-.pr-label { font-size:8px; text-transform:uppercase; letter-spacing:.8px; color:#93c5fd; font-weight:700; }
-.pr-val { font-size:11px; font-weight:700; color:#1e3a8a; margin-top:2px; }
-.pr-section-title { font-size:9px; font-weight:800; color:#1d4ed8; text-transform:uppercase; letter-spacing:1px; padding:5px 10px; margin:12px 0 8px; background:linear-gradient(90deg,#eff6ff,transparent); border-left:3px solid #1d4ed8; }
-.pr-table { width:100%; border-collapse:collapse; font-size:10px; }
-.pr-table th { background:#f9fafb; padding:5px 7px; text-align:left; font-weight:600; color:#6b7280; border-bottom:1px solid #e5e7eb; font-size:9px; text-transform:uppercase; }
-.pr-table td { padding:5px 7px; border-bottom:1px solid #f3f4f6; }
-.pr-group-row td { background:#eff6ff; font-weight:700; font-size:9px; color:#1d4ed8; text-transform:uppercase; padding:4px 7px; }
-.pr-result { font-weight:700; }
-.pr-flag-h { color:#dc2626; }
-.pr-flag-l { color:#2563eb; }
-.pr-note { border:1px solid #e5e7eb; border-radius:5px; padding:8px 10px; margin-bottom:6px; }
-.pr-note-meta { font-size:9px; color:#6b7280; margin-bottom:3px; font-weight:600; }
-.pr-note-body { font-size:10px; color:#374151; line-height:1.5; white-space:pre-wrap; }
-.pr-footer { margin-top:16px; padding-top:8px; border-top:1px solid #e5e7eb; font-size:9px; color:#9ca3af; text-align:center; }
+.print-preview {
+  background: linear-gradient(160deg, #f0f7ff 0%, #ffffff 40%);
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  padding: 28px;
+  font-family: 'Inter', Arial, sans-serif;
+  font-size: 12px;
+  color: #111827;
+  box-shadow: 0 4px 24px rgba(37,99,235,0.07), inset 0 1px 0 rgba(255,255,255,0.8);
+}
+.pr-header {
+  display: flex; align-items: center; gap: 16px;
+  background: linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 60%, #2563eb 100%);
+  border-radius: 10px; padding: 16px 20px; margin-bottom: 16px;
+  box-shadow: 0 4px 16px rgba(30,58,138,0.25);
+}
+.pr-logo { font-family: 'DM Sans', sans-serif; font-size: 28px; font-weight: 900; color: white; letter-spacing: -1px; text-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+.pr-clinic { font-size: 13px; font-weight: 700; color: rgba(255,255,255,0.95); }
+.pr-meta { font-size: 11px; color: rgba(255,255,255,0.65); margin-top: 2px; }
+.pr-patient-bar {
+  display: flex; gap: 0; margin-bottom: 16px; flex-wrap: wrap;
+  border: 1.5px solid #bfdbfe; border-radius: 10px; overflow: hidden;
+  background: white; box-shadow: 0 2px 8px rgba(37,99,235,0.06);
+}
+.pr-patient-detail {
+  display: flex; flex-direction: column; padding: 10px 18px; flex: 1;
+  border-right: 1px solid #e0eaff;
+}
+.pr-patient-detail:last-child { border-right: none; }
+.pr-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.8px; color: #93c5fd; font-weight: 700; }
+.pr-val { font-size: 12px; font-weight: 700; color: #1e3a8a; margin-top: 3px; }
+.pr-section-title {
+  font-size: 10px; font-weight: 800; color: #1d4ed8;
+  text-transform: uppercase; letter-spacing: 1px;
+  padding: 6px 12px; margin: 14px 0 10px;
+  background: linear-gradient(90deg, #eff6ff, transparent);
+  border-left: 3px solid #1d4ed8; border-radius: 0 4px 4px 0;
+}
+.pr-priority-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; }
+.pr-priority-cell {
+  border: 1.5px solid #e0eaff; border-radius: 10px; padding: 14px 10px;
+  text-align: center; background: white;
+  box-shadow: 0 2px 8px rgba(37,99,235,0.06);
+  transition: box-shadow .15s;
+}
+.pr-test-name { font-size: 9px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+.pr-val-big { font-size: 24px; font-weight: 800; color: #111827; line-height: 1; }
+.pr-unit { font-size: 11px; font-weight: 400; color: #6b7280; }
+.pr-flag { font-size: 10px; font-weight: 700; margin-top: 4px; }
+.pr-flag-h { color: #dc2626; }
+.pr-flag-l { color: #2563eb; }
+.pr-ref { font-size: 10px; color: #9ca3af; margin-top: 2px; }
+.pr-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 4px; }
+.pr-table th { background: #f9fafb; padding: 7px 8px; text-align: left; font-weight: 600; color: #6b7280; border-bottom: 1px solid #e5e7eb; font-size: 10px; text-transform: uppercase; }
+.pr-table td { padding: 7px 8px; border-bottom: 1px solid #f3f4f6; color: #1f2937; }
+.pr-row-flag td { background: white; }
+.pr-result { font-weight: 700; }
+.pr-code { color: #9ca3af; font-size: 10px; font-family: monospace; }
+.pr-note { border: 1px solid #e5e7eb; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; }
+.pr-note-meta { font-size: 10px; color: #6b7280; margin-bottom: 4px; font-weight: 600; }
+.pr-note-body { font-size: 12px; color: #374151; line-height: 1.5; white-space: pre-wrap; }
+.pr-footer { margin-top: 20px; padding-top: 10px; border-top: 1px solid #e5e7eb; font-size: 10px; color: #9ca3af; text-align: center; }
 </style>

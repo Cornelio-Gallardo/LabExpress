@@ -13,7 +13,7 @@ api.interceptors.request.use(config => {
 api.interceptors.response.use(
   res => res,
   err => {
-    if (err.response?.status === 401 && !window.location.pathname.includes('/login')) {
+    if (err.response?.status === 401) {
       localStorage.removeItem('dx7_token')
       localStorage.removeItem('dx7_user')
       window.location.href = '/login'
@@ -49,10 +49,8 @@ export const sessionsApi = {
 
 // ── Results ──────────────────────────────────────────────────────────────────
 export const resultsApi = {
-  getCurrent:  (patientId) => api.get(`/results/current/${patientId}`),
-  getHistory:  (patientId, testCode, params) => api.get(`/results/history/${patientId}/${testCode}`, { params }),
-  getCompare:  (patientId, count) => api.get(`/results/compare/${patientId}`, { params: { count } }),
-  getOrders:   (patientId) => api.get(`/results/orders/${patientId}`)
+  getCurrent: (patientId) => api.get(`/results/current/${patientId}`),
+  getHistory: (patientId, testCode, params) => api.get(`/results/history/${patientId}/${testCode}`, { params })
 }
 
 // ── MD Notes ─────────────────────────────────────────────────────────────────
@@ -84,3 +82,14 @@ export const exportApi = {
 }
 
 // ── Shift Management ─────────────────────────────────────────────────────────
+export const shiftsApi = {
+  getAll: (params) => api.get('/shifts', { params }),
+  getWeek: (params) => api.get('/shifts/week', { params }),
+  getHistory: (params) => api.get('/shifts/history', { params }),
+  create: (data) => api.post('/shifts', data),
+  bulkCreate: (data) => api.post('/shifts/bulk', data),
+  update: (id, data) => api.patch(`/shifts/${id}`, data),
+  delete: (id) => api.delete(`/shifts/${id}`),
+  assignNurse: (id, data) => api.post(`/shifts/${id}/nurses`, data),
+  removeNurse: (id, assignmentId) => api.delete(`/shifts/${id}/nurses/${assignmentId}`)
+}

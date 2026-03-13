@@ -1,5 +1,4 @@
 using Dx7Api.Data;
-using Dx7Api.DTOs;
 using Dx7Api.Services.Hl7;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -50,7 +49,7 @@ public class Hl7Controller : TenantBaseController
             try
             {
                 var msg    = Hl7Parser.Parse(content);
-                var result = await _processor.ProcessAsync(msg, TenantId, content);
+                var result = await _processor.ProcessAsync(msg, TenantId);
                 results.Add(new {
                     file   = file.FileName,
                     status = result.Status,
@@ -61,8 +60,7 @@ public class Hl7Controller : TenantBaseController
                 });
 
                 // Also save to inbox processed folder for audit trail
-                var prefix   = result.Status == "duplicate" ? "dup_" : "";
-                SaveToInbox(content, prefix + file.FileName, (result.Status == "error" || result.Status == "duplicate") ? "error" : "processed");
+                SaveToInbox(content, file.FileName, result.Status == "error" ? "error" : "processed");
             }
             catch (Exception ex)
             {
@@ -90,7 +88,7 @@ public class Hl7Controller : TenantBaseController
             return BadRequest(new { message = "Empty message body" });
 
         var msg    = Hl7Parser.Parse(content);
-        var result = await _processor.ProcessAsync(msg, TenantId, content);
+        var result = await _processor.ProcessAsync(msg, TenantId);
 
         return result.Status == "error"
             ? BadRequest(result)
@@ -170,271 +168,6 @@ public class Hl7Controller : TenantBaseController
             errored,
             tenantFolders = Directory.GetDirectories(inboxRoot).Select(Path.GetFileName).ToList()
         });
-    }
-
-
-    /// <summary>
-    /// Delete a specific log entry by its 0-based index (from the full sorted list).
-    /// </summary>
-    [HttpDelete("log/{index:int}")]
-    public IActionResult DeleteLogEntry(int index)
-    {
-        if (!IsPlAdmin && !IsClinicAdmin) return Forbid();
-
-        var inboxRoot = _config["Hl7:InboxPath"] ?? Path.Combine(AppContext.BaseDirectory, "HL7Inbox");
-        if (!Directory.Exists(inboxRoot))
-            return NotFound(new { message = "Inbox folder not found" });
-
-        var logFiles = Directory.GetFiles(inboxRoot, "dx7_hl7.log", SearchOption.AllDirectories).ToList();
-        if (logFiles.Count == 0) return NotFound(new { message = "No log file found" });
-
-        // Collect all lines sorted descending (same order as GetLog)
-        var allLines = logFiles
-            .SelectMany(f => System.IO.File.ReadAllLines(f))
-            .OrderByDescending(l => l)
-            .ToList();
-
-        if (index < 0 || index >= allLines.Count)
-            return BadRequest(new { message = "Index out of range" });
-
-        var lineToRemove = allLines[index];
-
-        // Remove from whichever log file contains it
-        foreach (var logFile in logFiles)
-        {
-            var lines = System.IO.File.ReadAllLines(logFile).ToList();
-            var idx = lines.LastIndexOf(lineToRemove);
-            if (idx >= 0)
-            {
-                lines.RemoveAt(idx);
-                System.IO.File.WriteAllLines(logFile, lines);
-                break;
-            }
-        }
-
-        return NoContent();
-    }
-
-    /// <summary>
-    /// Clear all log entries.
-    /// </summary>
-    [HttpDelete("log")]
-    public IActionResult ClearLog()
-    {
-        if (!IsPlAdmin && !IsClinicAdmin) return Forbid();
-
-        var inboxRoot = _config["Hl7:InboxPath"] ?? Path.Combine(AppContext.BaseDirectory, "HL7Inbox");
-        if (!Directory.Exists(inboxRoot)) return NoContent();
-
-        foreach (var logFile in Directory.GetFiles(inboxRoot, "dx7_hl7.log", SearchOption.AllDirectories))
-            System.IO.File.WriteAllText(logFile, "");
-
-        return NoContent();
-    }
-
-
-    /// <summary>
-    /// List quarantined (errored) HL7 files available for review/reprocessing.
-    /// </summary>
-    [HttpGet("quarantine")]
-    public IActionResult GetQuarantine()
-    {
-        var inboxRoot = _config["Hl7:InboxPath"] ?? Path.Combine(AppContext.BaseDirectory, "HL7Inbox");
-        if (!Directory.Exists(inboxRoot))
-            return Ok(new { files = Array.Empty<object>() });
-
-        var errorFiles = Directory.GetFiles(inboxRoot, "*.hl7", SearchOption.AllDirectories)
-            .Where(f => f.Contains("error"))
-            .Select(f =>
-            {
-                // Try to detect reason from log — fallback to "error"
-                var fn = Path.GetFileName(f);
-                var reason = fn.StartsWith("dup_") ? "duplicate" : "error";
-                return new {
-                    path     = f,
-                    fileName = fn,
-                    reason,
-                    size     = new FileInfo(f).Length,
-                    modified = new FileInfo(f).LastWriteTimeUtc
-                };
-            })
-            .OrderByDescending(f => f.modified)
-            .ToList();
-
-        return Ok(new { files = errorFiles });
-    }
-
-    /// <summary>
-    /// Reprocess a quarantined file by path.
-    /// For duplicates: moves to processed without re-saving results.
-    /// For errors: re-runs through the processor.
-    /// </summary>
-    [HttpPost("quarantine/reprocess")]
-    public async Task<IActionResult> ReprocessQuarantine([FromBody] ReprocessRequest req)
-    {
-        if (!IsPlAdmin && !IsClinicAdmin) return Forbid();
-        if (string.IsNullOrEmpty(req.Path) || !System.IO.File.Exists(req.Path))
-            return NotFound(new { message = "File not found" });
-
-        var fileName = Path.GetFileName(req.Path);
-        var isDuplicate = fileName.StartsWith("dup_");
-
-        Dx7Api.Services.Hl7.Hl7ProcessResult result;
-
-        if (isDuplicate)
-        {
-            // Duplicate — user has reviewed and confirmed; move to processed, do NOT re-save
-            result = new Dx7Api.Services.Hl7.Hl7ProcessResult
-            {
-                Status = "processed",
-                Notes  = "Duplicate reviewed and acknowledged by user — moved to processed without re-saving."
-            };
-        }
-        else
-        {
-            // Error — re-run through processor
-            var content = await System.IO.File.ReadAllTextAsync(req.Path);
-            var msg = Dx7Api.Services.Hl7.Hl7Parser.Parse(content);
-            result = await _processor.ProcessAsync(msg, TenantId, content);
-        }
-
-        if (result.Status != "error")
-        {
-            var processed = Path.Combine(
-                Path.GetDirectoryName(req.Path)!.Replace("error", "processed"),
-                fileName);
-            Directory.CreateDirectory(Path.GetDirectoryName(processed)!);
-            System.IO.File.Move(req.Path, processed, overwrite: true);
-        }
-
-        return Ok(result);
-    }
-
-    /// <summary>
-    /// Read raw content + parsed fields of a quarantined file for review.
-    /// </summary>
-    [HttpGet("quarantine/read")]
-    public async Task<IActionResult> ReadQuarantineFile([FromQuery] string path)
-    {
-        if (string.IsNullOrEmpty(path) || !System.IO.File.Exists(path))
-            return NotFound(new { message = "File not found" });
-
-        var inboxRoot = Path.GetFullPath(_config["Hl7:InboxPath"] ?? Path.Combine(AppContext.BaseDirectory, "HL7Inbox"));
-        var fullPath  = Path.GetFullPath(path);
-        if (!fullPath.StartsWith(inboxRoot))
-            return Forbid();
-
-        var raw    = await System.IO.File.ReadAllTextAsync(fullPath);
-        var msg    = Dx7Api.Services.Hl7.Hl7Parser.Parse(raw);
-        var display = FormatHl7Display(raw);
-        var fn     = Path.GetFileName(fullPath);
-        var reason = fn.StartsWith("dup_") ? "duplicate" : "error";
-
-        var parsed = new
-        {
-            messageType      = msg.MessageType,
-            messageId        = msg.MessageId,
-            sendingFacility  = msg.SendingFacility,
-            patientName      = msg.PatientName,
-            patientId        = msg.PatientId,
-            birthdate        = msg.PatientDob,
-            gender           = msg.PatientGender,
-            accessionId      = msg.AccessionId,
-            testCode         = msg.TestCode,
-            testName         = msg.TestName,
-            observationCount = msg.Observations.Count,
-            observations     = msg.Observations.Select(o => new {
-                o.TestCode, o.TestName, o.ResultValue, o.ResultUnit, o.ReferenceRange, o.AbnormalFlag, o.ResultStatus
-            }).ToList()
-        };
-
-        return Ok(new { raw = display, parsed, reason, fileName = fn });
-    }
-
-
-    /// <summary>
-    /// Read raw content + parsed fields of a log entry file.
-    /// Searches processed/ and error/ subfolders by original filename.
-    /// </summary>
-    [HttpGet("log/read")]
-    public async Task<IActionResult> ReadLogFile([FromQuery] string fileName)
-    {
-        if (string.IsNullOrEmpty(fileName))
-            return BadRequest(new { message = "fileName is required" });
-
-        var inboxRoot = _config["Hl7:InboxPath"] ?? Path.Combine(AppContext.BaseDirectory, "HL7Inbox");
-        if (!Directory.Exists(inboxRoot))
-            return NotFound(new { message = "Inbox not configured" });
-
-        // Strip "File: " prefix written by WriteLog
-        var baseName = fileName.StartsWith("File: ") ? fileName[6..] : fileName;
-
-        // Search all subfolders for a file ending with _{baseName} or exactly baseName
-        var candidates = Directory.GetFiles(inboxRoot, "*.hl7", SearchOption.AllDirectories)
-            .Where(f => {
-                var fn = Path.GetFileName(f);
-                return fn == baseName || fn.EndsWith("_" + baseName);
-            })
-            .OrderByDescending(f => new FileInfo(f).LastWriteTimeUtc)
-            .ToList();
-
-        if (candidates.Count == 0)
-            return NotFound(new { message = $"File '{baseName}' not found in inbox archive." });
-
-        var filePath = candidates[0];
-        var raw      = await System.IO.File.ReadAllTextAsync(filePath);
-        var msg      = Dx7Api.Services.Hl7.Hl7Parser.Parse(raw);
-        var display  = FormatHl7Display(raw);
-        var fn2      = Path.GetFileName(filePath);
-        var folder   = Path.GetFileName(Path.GetDirectoryName(filePath)!);
-
-        var parsed = new
-        {
-            messageType      = msg.MessageType,
-            messageId        = msg.MessageId,
-            sendingFacility  = msg.SendingFacility,
-            patientName      = msg.PatientName,
-            patientId        = msg.PatientId,
-            birthdate        = msg.PatientDob,
-            gender           = msg.PatientGender,
-            accessionId      = msg.AccessionId,
-            testCode         = msg.TestCode,
-            testName         = msg.TestName,
-            observationCount = msg.Observations.Count,
-            observations     = msg.Observations.Select(o => new {
-                o.TestCode, o.TestName,
-                value         = o.ResultValue,
-                units         = o.ResultUnit,
-                o.ReferenceRange, o.AbnormalFlag, o.ResultStatus
-            }).ToList()
-        };
-
-        return Ok(new { raw = display, parsed, folder, fileName = fn2, originalName = baseName });
-    }
-
-
-    /// <summary>
-    /// Formats raw HL7 for display — ensures each segment starts on a new line.
-    /// Handles files where segments are separated by \r, \n, or no separator at all.
-    /// </summary>
-    private static string FormatHl7Display(string raw)
-    {
-        // Normalize existing line endings first
-        var normalized = raw.Replace("\r\n", "\n").Replace("\r", "\n").Trim();
-
-        // If already has newlines between segments, just return normalized
-        if (normalized.Contains("\n"))
-            return normalized;
-
-        // No newlines — inject a newline before each known segment identifier
-        var segmentIds = new[] { "MSH", "PID", "PV1", "PV2", "ORC", "OBR", "OBX", "NTE", "SPM", "SAC", "IN1", "GT1", "AL1", "DG1", "FT1" };
-        var result = normalized;
-        foreach (var seg in segmentIds)
-        {
-            // Insert newline before each segment (but not at the very start)
-            result = System.Text.RegularExpressions.Regex.Replace(result, $@"(?<!^)(?={seg}\|)", "\n");
-        }
-        return result;
     }
 
     private void SaveToInbox(string content, string fileName, string subfolder)

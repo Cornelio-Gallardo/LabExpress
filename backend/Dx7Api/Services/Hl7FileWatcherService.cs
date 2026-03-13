@@ -4,6 +4,19 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Dx7Api.Services;
 
+/// <summary>
+/// Background service that watches a folder for incoming HL7 files.
+/// Files dropped into the inbox are parsed, processed, and moved to
+/// processed/ or error/ subfolders with a log entry.
+/// 
+/// Folder structure:
+///   HL7Inbox/
+///     {tenantSlug}/           ← one folder per tenant
+///       *.hl7                 ← drop files here
+///       processed/            ← successfully processed
+///       error/                ← failed to parse/process
+///       dx7_hl7.log           ← audit log
+/// </summary>
 public class Hl7FileWatcherService : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
@@ -25,101 +38,95 @@ public class Hl7FileWatcherService : BackgroundService
     {
         var inboxRoot = _config["Hl7:InboxPath"] ?? Path.Combine(AppContext.BaseDirectory, "HL7Inbox");
         Directory.CreateDirectory(inboxRoot);
-        _logger.LogInformation("HL7 Watcher started. Root: {Path}", inboxRoot);
 
-        // Initial scan
-        await ScanRootAsync(inboxRoot, stoppingToken);
+        _logger.LogInformation("HL7 Watcher started. Inbox: {Path}", inboxRoot);
 
-        // Watch the ROOT only (not subdirectories) for new tenant folders being created
-        WatchForNewTenantFolders(inboxRoot, stoppingToken);
+        // Watch all subdirectories (one per tenant slug) for new HL7 files
+        // Also scan on startup for any files dropped while service was down
+        await ScanAllAsync(inboxRoot, stoppingToken);
 
-        // Watch each existing tenant folder directly (NOT recursively)
-        foreach (var tenantDir in Directory.GetDirectories(inboxRoot))
-            WatchTenantFolder(tenantDir, stoppingToken);
+        // Set up live watchers for each tenant folder
+        SetupWatchers(inboxRoot, stoppingToken);
 
-        // Periodic scan as safety net
+        // Keep running and also do a periodic scan every 30s as safety net
         while (!stoppingToken.IsCancellationRequested)
         {
             await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
-            await ScanRootAsync(inboxRoot, stoppingToken);
+            await ScanAllAsync(inboxRoot, stoppingToken);
         }
     }
 
-    /// Watch the inbox root for new tenant subdirectories being created
-    private void WatchForNewTenantFolders(string inboxRoot, CancellationToken ct)
+    private void SetupWatchers(string inboxRoot, CancellationToken ct)
     {
+        // Watch the root — picks up new tenant subdirs too
         var watcher = new FileSystemWatcher(inboxRoot)
         {
-            NotifyFilter = NotifyFilters.DirectoryName,
-            IncludeSubdirectories = false,  // root only
-            EnableRaisingEvents = true
-        };
-        watcher.Created += (_, e) =>
-        {
-            if (Directory.Exists(e.FullPath))
-                WatchTenantFolder(e.FullPath, ct);
-        };
-        _watchers.Add(watcher);
-    }
-
-    /// Watch a single tenant folder directly — NOT recursively.
-    /// This means processed/ and error/ subfolders are completely invisible.
-    private void WatchTenantFolder(string tenantDir, CancellationToken ct)
-    {
-        if (!Directory.Exists(tenantDir)) return;
-
-        // Create archive folders upfront so the watcher never sees files land there
-        Directory.CreateDirectory(Path.Combine(tenantDir, "processed"));
-        Directory.CreateDirectory(Path.Combine(tenantDir, "error"));
-
-        var watcher = new FileSystemWatcher(tenantDir)
-        {
             Filter = "*.hl7",
-            IncludeSubdirectories = false,  // KEY: only watch THIS folder, not processed/ or error/
-            NotifyFilter = NotifyFilters.FileName,
+            IncludeSubdirectories = true,
+            NotifyFilter = NotifyFilters.FileName | NotifyFilters.CreationTime,
             EnableRaisingEvents = true
         };
 
         watcher.Created += async (_, e) =>
         {
             if (ct.IsCancellationRequested) return;
-            await Task.Delay(300, ct); // let file finish writing
-            await ProcessFileAsync(e.FullPath, tenantDir, ct);
+            // Ignore files already in processed/ or error/ folders
+            var dir = Path.GetDirectoryName(e.FullPath) ?? "";
+            var dirName = Path.GetFileName(dir);
+            if (dirName == "processed" || dirName == "error") return;
+            if (dir.Contains(Path.DirectorySeparatorChar + "processed") ||
+                dir.Contains(Path.DirectorySeparatorChar + "error")) return;
+            // Brief delay to ensure file is fully written
+            await Task.Delay(500, ct);
+            await ProcessFileAsync(e.FullPath, ct);
         };
 
         _watchers.Add(watcher);
-        _logger.LogInformation("HL7: Watching tenant folder {Dir}", tenantDir);
+        _logger.LogInformation("HL7 Watcher watching: {Path}/**/*.hl7", inboxRoot);
     }
 
-    /// Scan only the top-level of each tenant folder (not subfolders)
-    private async Task ScanRootAsync(string inboxRoot, CancellationToken ct)
+    private async Task ScanAllAsync(string inboxRoot, CancellationToken ct)
     {
-        foreach (var tenantDir in Directory.GetDirectories(inboxRoot))
-        {
-            // GetFiles without SearchOption.AllDirectories = top level only
-            var files = Directory.GetFiles(tenantDir, "*.hl7");
-            if (files.Length > 0)
-                _logger.LogInformation("HL7 Scan: {Count} pending in {Dir}", files.Length, Path.GetFileName(tenantDir));
+        var files = Directory.GetFiles(inboxRoot, "*.hl7", SearchOption.AllDirectories)
+            .Where(f => {
+                var dir = Path.GetDirectoryName(f) ?? "";
+                var dirName = Path.GetFileName(dir);
+                // Skip if file is inside a processed/ or error/ folder (at any depth)
+                return dirName != "processed" && dirName != "error"
+                    && !dir.Contains(Path.DirectorySeparatorChar + "processed" + Path.DirectorySeparatorChar)
+                    && !dir.Contains(Path.DirectorySeparatorChar + "error" + Path.DirectorySeparatorChar);
+            })
+            .ToList();
 
-            foreach (var file in files)
-            {
-                if (ct.IsCancellationRequested) return;
-                await ProcessFileAsync(file, tenantDir, ct);
-            }
+        if (files.Count > 0)
+            _logger.LogInformation("HL7 Startup scan: found {Count} pending file(s)", files.Count);
+
+        foreach (var file in files)
+        {
+            if (ct.IsCancellationRequested) break;
+            await ProcessFileAsync(file, ct);
         }
     }
 
-    private async Task ProcessFileAsync(string filePath, string tenantDir, CancellationToken ct)
+    private async Task ProcessFileAsync(string filePath, CancellationToken ct)
     {
         if (!File.Exists(filePath)) return;
 
-        var fileName   = Path.GetFileName(filePath);
-        var tenantSlug = Path.GetFileName(tenantDir);
+        var fileName = Path.GetFileName(filePath);
+        var dir      = Path.GetDirectoryName(filePath)!;
 
-        _logger.LogInformation("HL7: Processing {File}", fileName);
+        // Infer tenant from folder name (parent of the file)
+        // Structure: HL7Inbox/{tenantSlug}/file.hl7
+        var tenantSlug = Path.GetFileName(dir);
+
+        _logger.LogInformation("HL7: Processing {File} (tenant: {Slug})", fileName, tenantSlug);
 
         string rawContent;
-        try { rawContent = await ReadWithRetryAsync(filePath); }
+        try
+        {
+            // Read with retry for file locks
+            rawContent = await ReadWithRetryAsync(filePath);
+        }
         catch (Exception ex)
         {
             _logger.LogError("HL7: Cannot read {File}: {Error}", fileName, ex.Message);
@@ -131,82 +138,98 @@ public class Hl7FileWatcherService : BackgroundService
         {
             var msg = Hl7Parser.Parse(rawContent);
 
-            using var scope  = _scopeFactory.CreateScope();
-            var db     = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var logger = scope.ServiceProvider.GetRequiredService<ILogger<Hl7Processor>>();
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-            var tenant = await db.Tenants.FirstOrDefaultAsync(t =>
-                t.Code == tenantSlug || t.Name.ToLower() == tenantSlug.ToLower(), ct)
-                ?? await db.Tenants.FirstOrDefaultAsync(t => t.IsActive, ct);
+            // Resolve tenant
+            var tenant = await db.Tenants
+                .FirstOrDefaultAsync(t => t.Code == tenantSlug || t.Name.ToLower() == tenantSlug.ToLower(), ct);
 
             if (tenant == null)
             {
-                result = new Hl7ProcessResult { Status = "error", Notes = $"No tenant for: {tenantSlug}" };
+                // Fallback: use first active tenant (single-tenant deployments)
+                tenant = await db.Tenants.FirstOrDefaultAsync(t => t.IsActive, ct);
             }
-            else
+
+            if (tenant == null)
             {
-                db.CurrentTenantId = tenant.Id;
-                var processor = new Hl7Processor(db, logger);
-                result = await processor.ProcessAsync(msg, tenant.Id);
+                _logger.LogWarning("HL7: No tenant found for slug '{Slug}', skipping {File}", tenantSlug, fileName);
+                MoveFile(filePath, Path.Combine(dir, "error"), fileName);
+                return;
             }
+
+            // Disable global query filter for this operation
+            db.CurrentTenantId = tenant.Id;
+
+            var processor = new Hl7Processor(db, scope.ServiceProvider.GetRequiredService<ILogger<Hl7Processor>>());
+            result = await processor.ProcessAsync(msg, tenant.Id);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "HL7: Error in {File}", fileName);
-            result = new Hl7ProcessResult { Status = "error", Notes = ex.Message };
+            _logger.LogError(ex, "HL7: Parse/process error for {File}", fileName);
+            result = new Hl7ProcessResult
+            {
+                Status = "error",
+                Notes  = ex.Message,
+                MessageId = fileName
+            };
         }
 
-        // Move to processed/ or error/ (quarantine) 
-        // duplicates go to quarantine — visible for review, no silent discard
-        var archive = (result.Status == "error" || result.Status == "duplicate")
-            ? Path.Combine(tenantDir, "error")
-            : Path.Combine(tenantDir, "processed");
+        // Move file to processed/ or error/
+        var destFolder = result.Status == "error"
+            ? Path.Combine(dir, "error")
+            : Path.Combine(dir, "processed");
 
-        var archiveName = result.Status == "duplicate" ? "dup_" + fileName : fileName;
-        MoveToArchive(filePath, archive, archiveName);
-        WriteLog(tenantDir, fileName, result);
+        MoveFile(filePath, destFolder, fileName);
 
-        _logger.LogInformation("HL7 [{Status}] {File} — {Notes}", result.Status, fileName, result.Notes);
+        // Write audit log entry
+        WriteLog(dir, fileName, result);
+
+        _logger.LogInformation("HL7 {File}: {Status} — {Notes}", fileName, result.Status, result.Notes);
     }
 
-    private static void MoveToArchive(string source, string archiveDir, string fileName)
+    private static void MoveFile(string sourcePath, string destFolder, string fileName)
     {
         try
         {
-            var ts   = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-            var dest = Path.Combine(archiveDir, $"{ts}_{fileName}");
-            File.Move(source, dest, overwrite: true);
+            Directory.CreateDirectory(destFolder);
+            var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            var destPath  = Path.Combine(destFolder, $"{timestamp}_{fileName}");
+            if (File.Exists(destPath)) destPath = Path.Combine(destFolder, $"{timestamp}_{Guid.NewGuid():N}_{fileName}");
+            File.Move(sourcePath, destPath, overwrite: false);
         }
-        catch (Exception ex) { Console.WriteLine($"HL7: Move failed for {fileName}: {ex.Message}"); }
+        catch (Exception ex)
+        {
+            // Don't crash the service if file move fails
+            Console.WriteLine($"HL7: Failed to move file {fileName}: {ex.Message}");
+        }
     }
 
-    private static void WriteLog(string tenantDir, string fileName, Hl7ProcessResult r)
+    private static void WriteLog(string dir, string fileName, Hl7ProcessResult result)
     {
         try
         {
-            // Format must match controller parser: timestamp|status|msgType|patient|accession|saved|file|notes
-            var patient = string.IsNullOrEmpty(r.PatientName) ? r.PatientId : $"{r.PatientId} {r.PatientName}".Trim();
-            var line = string.Join("|",
-                DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
-                r.Status,
-                r.MessageType,
-                patient,
-                r.AccessionId,
-                r.ResultsSaved.ToString(),
-                $"File: {fileName}",
-                r.Notes ?? ""
-            );
-            File.AppendAllText(Path.Combine(tenantDir, "dx7_hl7.log"), line + Environment.NewLine);
+            var logPath = Path.Combine(dir, "dx7_hl7.log");
+            var line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} | {result.Status,-16} | {result.MessageType,-12} | " +
+                       $"Patient: {result.PatientId,-12} {result.PatientName,-30} | " +
+                       $"Acc: {result.AccessionId,-15} | Saved: {result.ResultsSaved,3} | File: {fileName} | {result.Notes}";
+            File.AppendAllText(logPath, line + Environment.NewLine);
         }
-        catch { }
+        catch { /* log write failures are non-fatal */ }
     }
 
     private static async Task<string> ReadWithRetryAsync(string path, int retries = 5)
     {
         for (int i = 0; i < retries; i++)
         {
-            try { return await File.ReadAllTextAsync(path); }
-            catch (IOException) when (i < retries - 1) { await Task.Delay(200 * (i + 1)); }
+            try
+            {
+                return await File.ReadAllTextAsync(path);
+            }
+            catch (IOException) when (i < retries - 1)
+            {
+                await Task.Delay(200 * (i + 1));
+            }
         }
         return await File.ReadAllTextAsync(path);
     }

@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "Yxg2RFk4zNc=",
+  "dgSpecHash": "80XRNshs3uM=",
   "success": true,
-  "projectFilePath": "D:\\development\\LabExpress\\DX7-LabExpress\\backend\\dx7api\\Dx7Api.csproj",
+  "projectFilePath": "D:\\development\\LabExpress\\dx7\\backend\\Dx7Api\\Dx7Api.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\Korn Gallardo\\.nuget\\packages\\bcrypt.net-next\\4.0.3\\bcrypt.net-next.4.0.3.nupkg.sha512",
     "C:\\Users\\Korn Gallardo\\.nuget\\packages\\csvhelper\\33.0.1\\csvhelper.33.0.1.nupkg.sha512",

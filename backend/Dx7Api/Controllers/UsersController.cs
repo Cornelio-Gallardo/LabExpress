@@ -57,24 +57,6 @@ public class UsersController : TenantBaseController
         ));
     }
 
-
-    // GET /api/users/me  — any authenticated user can fetch their own profile
-    [HttpGet("me")]
-    public async Task<IActionResult> GetMe()
-    {
-        if (CurrentUserId == Guid.Empty) return Unauthorized();
-        var user = await _db.Users.Include(u => u.Client)
-            .FirstOrDefaultAsync(u => u.Id == CurrentUserId);
-        if (user == null) return Unauthorized();
-
-        return Ok(new UserDetailDto(
-            user.Id, user.Name, user.Email, user.Role.ToString(),
-            user.TenantId, user.ClientId,
-            user.Client == null ? null : user.Client.Name,
-            user.IsActive, user.CreatedAt, user.AvatarUrl
-        ));
-    }
-
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateUserRequest req)
     {

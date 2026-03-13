@@ -21,7 +21,9 @@
       <div v-else-if="pickerShifts.length === 0" class="empty-state">
         <div class="empty-icon">📅</div>
         <div class="empty-title">No shifts scheduled for today</div>
-        <div class="empty-sub">Go to Shift Management to create shifts for today.</div>      </div>
+        <div class="empty-sub">Go to Shift Management to create shifts for today.</div>
+        <router-link to="/shift-management" class="btn btn-primary" style="margin-top:16px">Go to Shift Management</router-link>
+      </div>
 
       <div v-else>
         <div style="font-size:13px; font-weight:600; color:var(--slate); margin-bottom:12px; text-transform:uppercase; letter-spacing:0.5px">
@@ -56,7 +58,7 @@
               {{ saving ? 'Adding…' : `Confirm — Add ${selected.length} to Shift ${shiftNum}` }}
             </button>
             <button class="btn btn-outline" @click="resetShift">← Change Shift</button>
-            <router-link to="/dashboard" class="btn btn-outline">← Back to Dashboard</router-link>
+            <router-link to="/shifts" class="btn btn-outline">← Back to Shifts</router-link>
           </div>
         </div>
       </div>
@@ -370,7 +372,7 @@ async function addSelected() {
         clientId:    resolvedClientId.value || null
       })
     }
-    router.push('/dashboard')
+    router.push('/shifts')
   } catch (e) {
     const status = e.response?.status
     const msg = e.response?.data?.message || e.response?.data || e.message || 'Unknown error'

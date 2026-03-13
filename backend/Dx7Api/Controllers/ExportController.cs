@@ -274,12 +274,7 @@ public class ExportController : TenantBaseController
             r.AbnormalFlag, r.ResultDate, r.SourceLab,
             (DateOnly.FromDateTime(DateTime.UtcNow).DayNumber - r.ResultDate.DayNumber),
             r.ResultStatus ?? "final",
-            r.AccessionId,
-            AnalyteCode:    r.AnalyteCode,
-            SxaTestId:      r.SxaTestId,
-            ResultHeaderId: null,
-            OrderId:        null,
-            Hl7MessageId:   r.Hl7MessageId
+            r.AccessionId
         )));
     }
 }
