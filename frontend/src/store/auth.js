@@ -31,15 +31,14 @@ export const useAuthStore = defineStore('auth', {
 
     // Per PRD Role Permissions Matrix
     canSelectShift:    (s) => ['charge_nurse', 'shift_nurse', 'md', 'clinic_admin', 'pl_admin'].includes(s.user?.role),
-    canSelectPatients: (s) => ['charge_nurse', 'clinic_admin', 'pl_admin'].includes(s.user?.role),
-    canAssignChairs:   (s) => s.user?.role === 'charge_nurse',
+    canSelectPatients: (s) => ['charge_nurse', 'shift_nurse', 'clinic_admin', 'pl_admin'].includes(s.user?.role),
+    canAssignChairs:   (s) => ['charge_nurse', 'shift_nurse'].includes(s.user?.role),
     canViewResults:    (s) => ['charge_nurse', 'shift_nurse', 'md'].includes(s.user?.role),
     canViewNotes:      (s) => ['charge_nurse', 'shift_nurse', 'md'].includes(s.user?.role),
     canWriteNotes:     (s) => s.user?.role === 'md',
     canExport:         (s) => ['charge_nurse', 'clinic_admin', 'pl_admin'].includes(s.user?.role),
     canPrint:          (s) => ['charge_nurse', 'md', 'clinic_admin', 'pl_admin'].includes(s.user?.role),
-    canManageSession:  (s) => ['charge_nurse', 'clinic_admin', 'pl_admin'].includes(s.user?.role),
-    canManageShifts:   (s) => ['charge_nurse', 'clinic_admin', 'pl_admin'].includes(s.user?.role),
+    canManageSession:  (s) => ['charge_nurse', 'shift_nurse', 'clinic_admin', 'pl_admin'].includes(s.user?.role),
     canManageUsers:    (s) => ['clinic_admin', 'pl_admin'].includes(s.user?.role),
     canManageClinics:  (s) => s.user?.role === 'pl_admin',
 

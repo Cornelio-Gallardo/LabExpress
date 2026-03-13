@@ -27,15 +27,33 @@ public class SessionsController : TenantBaseController
     public async Task<IActionResult> GetAll(
         [FromQuery] Guid? clientId,
         [FromQuery] DateOnly? date,
+        [FromQuery] DateOnly? dateFrom,
+        [FromQuery] DateOnly? dateTo,
         [FromQuery] int? shift)
     {
         var resolvedClientId = clientId ?? ClientId;
-        var resolvedDate = date ?? DateOnly.FromDateTime(DateTime.UtcNow);
 
-        var query = _db.Sessions
-            .Include(s => s.Patient)
-            .Include(s => s.AssignedByUser)
-            .Where(s => s.TenantId == TenantId && s.SessionDate == resolvedDate);
+        IQueryable<Session> query;
+
+        if (dateFrom.HasValue || dateTo.HasValue)
+        {
+            // Range query — no default, return all in range
+            query = _db.Sessions
+                .Include(s => s.Patient)
+                .Include(s => s.AssignedByUser)
+                .Where(s => s.TenantId == TenantId);
+            if (dateFrom.HasValue) query = query.Where(s => s.SessionDate >= dateFrom.Value);
+            if (dateTo.HasValue)   query = query.Where(s => s.SessionDate <= dateTo.Value);
+        }
+        else
+        {
+            // Single date (default today)
+            var resolvedDate = date ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            query = _db.Sessions
+                .Include(s => s.Patient)
+                .Include(s => s.AssignedByUser)
+                .Where(s => s.TenantId == TenantId && s.SessionDate == resolvedDate);
+        }
 
         if (resolvedClientId.HasValue)
             query = query.Where(s => s.ClientId == resolvedClientId.Value);
@@ -47,9 +65,21 @@ public class SessionsController : TenantBaseController
 
         return Ok(sessions.Select(s => new SessionDto(
             s.Id, s.PatientId, s.Patient.Name,
-            s.SessionDate, s.ShiftNumber, s.Chair,
+            s.SessionDate, s.ShiftNumber, s.ShiftLabel, s.Chair,
             s.AssignedByUser.Name, s.AssignedAt
         )));
+    }
+
+
+    // GET /api/sessions/last-date — returns the most recent session date for this tenant/client
+    [HttpGet("last-date")]
+    public async Task<IActionResult> GetLastDate([FromQuery] Guid? clientId)
+    {
+        var resolvedClientId = clientId ?? ClientId;
+        var query = _db.Sessions.Where(s => s.TenantId == TenantId);
+        if (resolvedClientId.HasValue) query = query.Where(s => s.ClientId == resolvedClientId.Value);
+        var last = await query.OrderByDescending(s => s.SessionDate).Select(s => s.SessionDate).FirstOrDefaultAsync();
+        return Ok(new { date = last == default ? DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd") : last.ToString("yyyy-MM-dd") });
     }
 
     [HttpGet("{id}")]
@@ -62,7 +92,7 @@ public class SessionsController : TenantBaseController
         if (session == null) return NotFound();
         return Ok(new SessionDto(
             session.Id, session.PatientId, session.Patient.Name,
-            session.SessionDate, session.ShiftNumber, session.Chair,
+            session.SessionDate, session.ShiftNumber, session.ShiftLabel, session.Chair,
             session.AssignedByUser.Name, session.AssignedAt
         ));
     }
@@ -71,22 +101,26 @@ public class SessionsController : TenantBaseController
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateSessionRequest req)
     {
-        if (!IsChargeNurse && !IsClinicAdmin && !IsPlAdmin)
+        if (!IsChargeNurse && !IsShiftNurse && !IsClinicAdmin && !IsPlAdmin)
             return Forbid();
 
         var resolvedClientId = await ResolveClientId(req.ClientId);
         if (!resolvedClientId.HasValue)
             return BadRequest(new { message = "Client context required" });
 
-        // Prevent duplicate patient in same shift/date
+        // Resolve label and numeric index
+        var label = !string.IsNullOrWhiteSpace(req.ShiftLabel) ? req.ShiftLabel.Trim() : "Shift 1";
+        int shiftNum = req.ShiftNumber > 0 ? req.ShiftNumber
+            : int.TryParse(System.Text.RegularExpressions.Regex.Match(label, @"\d+").Value, out var n) ? n : 0;
+
+        // Prevent duplicate patient on same date (any shift)
         var alreadyExists = await _db.Sessions.AnyAsync(s =>
             s.ClientId == resolvedClientId.Value &&
             s.PatientId == req.PatientId &&
-            s.SessionDate == req.SessionDate &&
-            s.ShiftNumber == req.ShiftNumber);
+            s.SessionDate == req.SessionDate);
 
         if (alreadyExists)
-            return Ok(new { warning = "Patient already in this shift", created = false, duplicate = true });
+            return Ok(new { warning = "Patient already assigned on this date", created = false, duplicate = true });
 
         // Flag duplicate chair but still create
         bool chairDuplicate = false;
@@ -95,7 +129,7 @@ public class SessionsController : TenantBaseController
             chairDuplicate = await _db.Sessions.AnyAsync(s =>
                 s.ClientId == resolvedClientId.Value &&
                 s.SessionDate == req.SessionDate &&
-                s.ShiftNumber == req.ShiftNumber &&
+                s.ShiftLabel == label &&
                 s.Chair == req.Chair);
         }
 
@@ -105,7 +139,8 @@ public class SessionsController : TenantBaseController
             ClientId    = resolvedClientId.Value,
             PatientId   = req.PatientId,
             SessionDate = req.SessionDate,
-            ShiftNumber = req.ShiftNumber,
+            ShiftNumber = shiftNum,
+            ShiftLabel  = label,
             Chair       = req.Chair,
             AssignedBy  = CurrentUserId,
         };
@@ -113,17 +148,26 @@ public class SessionsController : TenantBaseController
         _db.Sessions.Add(session);
         await _db.SaveChangesAsync();
 
-        if (chairDuplicate)
-            return Ok(new { warning = $"Chair {req.Chair} is already assigned this shift", created = true, id = session.Id });
+        await _db.Entry(session).Reference(s => s.Patient).LoadAsync();
+        await _db.Entry(session).Reference(s => s.AssignedByUser).LoadAsync();
 
-        return Ok(new { created = true, id = session.Id });
+        var dto = new SessionDto(
+            session.Id, session.PatientId, session.Patient.Name,
+            session.SessionDate, session.ShiftNumber, session.ShiftLabel, session.Chair,
+            session.AssignedByUser.Name, session.AssignedAt
+        );
+
+        if (chairDuplicate)
+            return Ok(new { warning = $"Chair {req.Chair} already assigned in {label}", created = true, session = dto });
+
+        return Ok(new { created = true, session = dto });
     }
 
     // Bulk create sessions
     [HttpPost("bulk")]
     public async Task<IActionResult> BulkCreate([FromBody] BulkCreateSessionRequest req)
     {
-        if (!IsChargeNurse && !IsClinicAdmin && !IsPlAdmin)
+        if (!IsChargeNurse && !IsShiftNurse && !IsClinicAdmin && !IsPlAdmin)
             return Forbid();
 
         var resolvedClientId = await ResolveClientId(req.ClientId);
@@ -159,7 +203,7 @@ public class SessionsController : TenantBaseController
     [HttpPatch("{id}")]
     public async Task<IActionResult> UpdateChair(Guid id, [FromBody] UpdateChairRequest req)
     {
-        if (!IsChargeNurse && !IsClinicAdmin && !IsPlAdmin)
+        if (!IsChargeNurse && !IsShiftNurse && !IsClinicAdmin && !IsPlAdmin)
             return Forbid();
 
         var session = await _db.Sessions.FirstOrDefaultAsync(s => s.Id == id && s.TenantId == TenantId);
@@ -185,7 +229,7 @@ public class SessionsController : TenantBaseController
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(Guid id)
     {
-        if (!IsChargeNurse && !IsClinicAdmin && !IsPlAdmin)
+        if (!IsChargeNurse && !IsShiftNurse && !IsClinicAdmin && !IsPlAdmin)
             return Forbid();
 
         var session = await _db.Sessions.FirstOrDefaultAsync(s => s.Id == id && s.TenantId == TenantId);

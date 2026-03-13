@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "D:\\development\\LabExpress\\dx7\\backend\\Dx7Api\\Dx7Api.csproj": {}
+    "D:\\development\\LabExpress\\DX7-LabExpress\\backend\\dx7api\\Dx7Api.csproj": {}
   },
   "projects": {
-    "D:\\development\\LabExpress\\dx7\\backend\\Dx7Api\\Dx7Api.csproj": {
+    "D:\\development\\LabExpress\\DX7-LabExpress\\backend\\dx7api\\Dx7Api.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "D:\\development\\LabExpress\\dx7\\backend\\Dx7Api\\Dx7Api.csproj",
+        "projectUniqueName": "D:\\development\\LabExpress\\DX7-LabExpress\\backend\\dx7api\\Dx7Api.csproj",
         "projectName": "Dx7Api",
-        "projectPath": "D:\\development\\LabExpress\\dx7\\backend\\Dx7Api\\Dx7Api.csproj",
+        "projectPath": "D:\\development\\LabExpress\\DX7-LabExpress\\backend\\dx7api\\Dx7Api.csproj",
         "packagesPath": "C:\\Users\\Korn Gallardo\\.nuget\\packages\\",
-        "outputPath": "D:\\development\\LabExpress\\dx7\\backend\\Dx7Api\\obj\\",
+        "outputPath": "D:\\development\\LabExpress\\DX7-LabExpress\\backend\\dx7api\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
