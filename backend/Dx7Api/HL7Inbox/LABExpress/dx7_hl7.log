@@ -1,1 +1,8 @@
-2026-03-14 09:36:35|duplicate|ORU^R01|P1900000001|26006411|0|File: HL7WNFS_00046328 RQL.hl7|MSH-10 'HCL00006812501' already processed — §2.1 UNIQUE constraint.
+2026-03-14 11:01:05|duplicate|ORU^R01|P1900000001|26006414|0|File: 20260314_105614_dup_HL7WNFS_00046331 BUNPRE.hl7|MSH-10 'HCL00006812531' already processed — §2.1 UNIQUE constraint.
+2026-03-14 11:01:05|error|ORU^R01|P1900000001|26006413|0|File: 20260314_105614_HL7WNFS_00046330 SADC.hl7|23505: duplicate key value violates unique constraint "IX_Patients_TenantId_ClientId_LisPatientId"
+
+DETAIL: Detail redacted as it may contain sensitive data. Specify 'Include Error Detail' in the connection string to include this information.
+2026-03-14 11:01:05|error|ORU^R01|P1900000001|26006414|0|File: 20260314_105450_dup_20260314_105320_dup_HL7WNFS_00046331 BUNPRE.hl7|23505: duplicate key value violates unique constraint "IX_Patients_TenantId_ClientId_LisPatientId"
+
+DETAIL: Detail redacted as it may contain sensitive data. Specify 'Include Error Detail' in the connection string to include this information.
+2026-03-14 11:01:05|processed|ORU^R01|P1900000001 , DE SILVA, ALEENA CLAIRE MAYO|26006415|1|File: 20260314_105614_HL7WNFS_00046332 BUNPOS.hl7|Saved 1 ResultValue(s)

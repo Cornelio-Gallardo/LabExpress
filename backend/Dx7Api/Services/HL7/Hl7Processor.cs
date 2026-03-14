@@ -79,7 +79,9 @@ public class Hl7Processor
             }
             result.PatientName = patient.Name;
 
-            var obsDateTime = msg.ObservationDateTime != default ? msg.ObservationDateTime : DateTime.UtcNow;
+            var obsDateTime = msg.ObservationDateTime != default
+                ? DateTime.SpecifyKind(msg.ObservationDateTime, DateTimeKind.Utc)
+                : DateTime.UtcNow;
 
             // ── ORM^O01 — incoming order, write LabOrder as pending ──────────
             if (msg.IsOrder)
@@ -180,8 +182,8 @@ public class Hl7Processor
                     OrderId            = order.Id,
                     TenantId           = tenantId,
                     SourceHl7MessageId = hl7Archive.Id,
-                    SxaTestId          = testMap.SxaTestId,
-                    CollectionDatetime = msg.ObservationDateTime != default ? msg.ObservationDateTime : null,
+                    SxaTestId          = testMap?.SxaTestId,
+                    CollectionDatetime = msg.ObservationDateTime != default ? DateTime.SpecifyKind(msg.ObservationDateTime, DateTimeKind.Utc) : null,
                     ResultDatetime     = obsDateTime,
                 };
                 _db.ResultHeaders.Add(header);

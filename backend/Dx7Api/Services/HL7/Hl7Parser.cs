@@ -133,7 +133,7 @@ public static class Hl7Parser
     {
         if (string.IsNullOrEmpty(hl7dt)) return default;
         hl7dt = hl7dt.Split('+')[0].Split('-')[0]; // strip timezone
-        return hl7dt.Length switch
+        var result = hl7dt.Length switch
         {
             >= 14 => DateTime.TryParseExact(hl7dt[..14], "yyyyMMddHHmmss", null,
                          System.Globalization.DateTimeStyles.None, out var dt14) ? dt14 : default,
@@ -143,6 +143,7 @@ public static class Hl7Parser
                          System.Globalization.DateTimeStyles.None, out var dt8) ? dt8 : default,
             _     => default
         };
+        return result == default ? default : DateTime.SpecifyKind(result, DateTimeKind.Utc);
     }
 }
 

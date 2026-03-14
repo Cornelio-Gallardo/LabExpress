@@ -10,26 +10,12 @@ public static class DbSeeder
         if (await db.Tenants.AnyAsync()) return;
 
         // ── Tenant ────────────────────────────────────────────────────────────
-        var tenant = new Tenant
-        {
-            Id = Guid.NewGuid(),
-            Name = "LABExpress",
-            PrimaryColor = "#0D7377",
-            IsActive = true
-        };
+        var tenant = new Tenant { Id = Guid.NewGuid(), Name = "LABExpress", Code = "LABExpress", PrimaryColor = "#0D7377", IsActive = true };
         db.Tenants.Add(tenant);
         await db.SaveChangesAsync();
 
-        // ── Client (Clinic) ───────────────────────────────────────────────────
-        var client = new Client
-        {
-            Id = Guid.NewGuid(),
-            TenantId = tenant.Id,
-            Name = "Metro Dialysis Center",
-            Code = "MDC",
-            Address = "123 Health Ave., Manila",
-            IsActive = true
-        };
+        // ── Client ────────────────────────────────────────────────────────────
+        var client = new Client { Id = Guid.NewGuid(), TenantId = tenant.Id, Name = "Metro Dialysis Center", Code = "MDC", Address = "123 Health Ave., Manila", IsActive = true };
         db.Clients.Add(client);
         await db.SaveChangesAsync();
 
@@ -46,15 +32,13 @@ public static class DbSeeder
         await db.SaveChangesAsync();
 
         // ── Roles ─────────────────────────────────────────────────────────────
-        var roles = new List<RoleDefinition>
-        {
+        db.RoleDefinitions.AddRange(
             new() { TenantId = tenant.Id, RoleKey = "charge_nurse",  Label = "Charge Nurse",  Description = "Manages shift roster, assigns chairs, views all results, exports reports", SortOrder = 1 },
-            new() { TenantId = tenant.Id, RoleKey = "shift_nurse",   Label = "Shift Nurse",   Description = "Views patient results and MD notes. Read-only access.", SortOrder = 2 },
-            new() { TenantId = tenant.Id, RoleKey = "md",            Label = "Nephrologist",  Description = "Views results and writes/edits session notes (24hr edit window)", SortOrder = 3 },
-            new() { TenantId = tenant.Id, RoleKey = "clinic_admin",  Label = "Clinic Admin",  Description = "Full access to clinic: manage users, patients, sessions, export", SortOrder = 4 },
-            new() { TenantId = tenant.Id, RoleKey = "pl_admin",      Label = "PL Admin",      Description = "Partner Lab admin — manages all clinics under the tenant", SortOrder = 5 },
-        };
-        db.RoleDefinitions.AddRange(roles);
+            new() { TenantId = tenant.Id, RoleKey = "shift_nurse",   Label = "Shift Nurse",   Description = "Views patient results and MD notes. Read-only access.",                   SortOrder = 2 },
+            new() { TenantId = tenant.Id, RoleKey = "md",            Label = "Nephrologist",  Description = "Views results and writes/edits session notes (24hr edit window)",         SortOrder = 3 },
+            new() { TenantId = tenant.Id, RoleKey = "clinic_admin",  Label = "Clinic Admin",  Description = "Full access to clinic: manage users, patients, sessions, export",         SortOrder = 4 },
+            new() { TenantId = tenant.Id, RoleKey = "pl_admin",      Label = "PL Admin",      Description = "Partner Lab admin — manages all clinics under the tenant",                SortOrder = 5 }
+        );
         await db.SaveChangesAsync();
 
         // ── Patients ──────────────────────────────────────────────────────────
@@ -69,212 +53,184 @@ public static class DbSeeder
             ("TORRES, Elena",   "P007", "PH-0956-8834-6", "F", new DateOnly(1975,  8,  9), "09231234507"),
             ("FLORES, Miguel",  "P008", "PH-1067-1123-4", "M", new DateOnly(1968, 12,  3), "09241234508"),
         };
-
         var patients = patientData.Select(p => new Patient
         {
-            Id           = Guid.NewGuid(),
-            TenantId     = tenant.Id,
-            ClientId     = client.Id,
-            Name         = p.Item1,
-            LisPatientId = p.Item2,
-            PhilhealthNo = p.Item3,
-            Gender       = p.Item4,
-            Birthdate    = p.Item5,
-            ContactNumber = p.Item6,
-            IsActive     = true
+            Id = Guid.NewGuid(), TenantId = tenant.Id, ClientId = client.Id,
+            Name = p.Item1, LisPatientId = p.Item2, PhilhealthNo = p.Item3,
+            Gender = p.Item4, Birthdate = p.Item5, ContactNumber = p.Item6, IsActive = true
         }).ToList();
-
         db.Patients.AddRange(patients);
         await db.SaveChangesAsync();
 
-        // ── SXA Catalog seed (analytes + tests) ───────────────────────────────
-        // Tests and analytes are seeded by add_cdm_v1.sql migration.
-        // Here we just look them up to build analyte maps for seeding.
-        var analyteMap = await db.SxaAnalytes.ToDictionaryAsync(a => a.AnalyteCode);
-        var testMap    = await db.SxaTests.ToDictionaryAsync(t => t.SxaTestId);
+        // ── §5 SXA Test Catalog ───────────────────────────────────────────────
+        db.SxaTests.AddRange(
+            new() { SxaTestId = "SXA_TEST_CBC",      CanonicalName = "Complete Blood Count",               Category = "Hematology",  ResultType = SxaResultType.PANEL,  ActiveFlag = true },
+            new() { SxaTestId = "SXA_TEST_CHEM",     CanonicalName = "Chemistry Panel",                    Category = "Chemistry",   ResultType = SxaResultType.PANEL,  ActiveFlag = true },
+            new() { SxaTestId = "SXA_TEST_FBS",      CanonicalName = "Fasting Blood Sugar",                Category = "Chemistry",   ResultType = SxaResultType.SINGLE, ActiveFlag = true },
+            new() { SxaTestId = "SXA_TEST_BUN_PRE",  CanonicalName = "Blood Urea Nitrogen (Pre-Dialysis)", Category = "Chemistry",   ResultType = SxaResultType.SINGLE, ActiveFlag = true },
+            new() { SxaTestId = "SXA_TEST_BUN_POST", CanonicalName = "Blood Urea Nitrogen (Post-Dialysis)",Category = "Chemistry",   ResultType = SxaResultType.SINGLE, ActiveFlag = true },
+            new() { SxaTestId = "SXA_TEST_LIPID",    CanonicalName = "Lipid Panel",                        Category = "Chemistry",   ResultType = SxaResultType.PANEL,  ActiveFlag = true },
+            new() { SxaTestId = "SXA_TEST_K",        CanonicalName = "Potassium",                          Category = "Chemistry",   ResultType = SxaResultType.SINGLE, ActiveFlag = true },
+            new() { SxaTestId = "SXA_TEST_MULTI",    CanonicalName = "Multi-Panel (Fallback)",             Category = "Chemistry",   ResultType = SxaResultType.PANEL,  ActiveFlag = true }
+        );
+        await db.SaveChangesAsync();
 
-        // ── Lab Results seeded as CDM chain: HL7_Message → Order → Header → Values
-        // Two result dates per patient. CBC order + CHEM order per date.
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var rand  = new Random(42);
+        // ── §5 SXA Analyte Catalog — full HCLab dialysis scope ───────────────
+        db.SxaAnalytes.AddRange(
+            // Hematology — CBC
+            new() { AnalyteCode = "SXA_A_HGB",   DisplayName = "Hemoglobin",             DefaultUnit = "g/dL",    ResultType = SxaAnalyteResultType.NUMERIC },
+            new() { AnalyteCode = "SXA_A_HCT",   DisplayName = "Hematocrit",             DefaultUnit = "%",       ResultType = SxaAnalyteResultType.NUMERIC },
+            new() { AnalyteCode = "SXA_A_RBC",   DisplayName = "RBC",                    DefaultUnit = "x10¹²/L", ResultType = SxaAnalyteResultType.NUMERIC },
+            new() { AnalyteCode = "SXA_A_WBC",   DisplayName = "WBC",                    DefaultUnit = "x10⁹/L",  ResultType = SxaAnalyteResultType.NUMERIC },
+            new() { AnalyteCode = "SXA_A_PLT",   DisplayName = "Platelets",              DefaultUnit = "x10⁹/L",  ResultType = SxaAnalyteResultType.NUMERIC },
+            new() { AnalyteCode = "SXA_A_MCV",   DisplayName = "MCV",                    DefaultUnit = "fL",      ResultType = SxaAnalyteResultType.NUMERIC },
+            new() { AnalyteCode = "SXA_A_MCH",   DisplayName = "MCH",                    DefaultUnit = "pg",      ResultType = SxaAnalyteResultType.NUMERIC },
+            new() { AnalyteCode = "SXA_A_MCHC",  DisplayName = "MCHC",                   DefaultUnit = "g/dL",    ResultType = SxaAnalyteResultType.NUMERIC },
+            new() { AnalyteCode = "SXA_A_NEUT",  DisplayName = "Neutrophils",            DefaultUnit = "",        ResultType = SxaAnalyteResultType.NUMERIC },
+            new() { AnalyteCode = "SXA_A_LYMPH", DisplayName = "Lymphocytes",            DefaultUnit = "",        ResultType = SxaAnalyteResultType.NUMERIC },
+            new() { AnalyteCode = "SXA_A_MONO",  DisplayName = "Monocytes",              DefaultUnit = "",        ResultType = SxaAnalyteResultType.NUMERIC },
+            new() { AnalyteCode = "SXA_A_EO",    DisplayName = "Eosinophils",            DefaultUnit = "",        ResultType = SxaAnalyteResultType.NUMERIC },
+            new() { AnalyteCode = "SXA_A_BASO",  DisplayName = "Basophils",              DefaultUnit = "",        ResultType = SxaAnalyteResultType.NUMERIC },
+            // Chemistry — Renal / Dialysis
+            new() { AnalyteCode = "SXA_A_BUN_PRE",  DisplayName = "BUN Pre-Dialysis",   DefaultUnit = "mmol/L",  ResultType = SxaAnalyteResultType.NUMERIC },
+            new() { AnalyteCode = "SXA_A_BUN_POST", DisplayName = "BUN Post-Dialysis",  DefaultUnit = "mmol/L",  ResultType = SxaAnalyteResultType.NUMERIC },
+            new() { AnalyteCode = "SXA_A_URR",   DisplayName = "URR",                    DefaultUnit = "%",       ResultType = SxaAnalyteResultType.NUMERIC },
+            new() { AnalyteCode = "SXA_A_KTV",   DisplayName = "Kt/V",                   DefaultUnit = "",        ResultType = SxaAnalyteResultType.NUMERIC },
+            new() { AnalyteCode = "SXA_A_CREAT", DisplayName = "Creatinine",             DefaultUnit = "µmol/L",  ResultType = SxaAnalyteResultType.NUMERIC },
+            new() { AnalyteCode = "SXA_A_ALB",   DisplayName = "Albumin",                DefaultUnit = "g/L",     ResultType = SxaAnalyteResultType.NUMERIC },
+            new() { AnalyteCode = "SXA_A_ALKP",  DisplayName = "Alkaline Phosphatase",   DefaultUnit = "U/L",     ResultType = SxaAnalyteResultType.NUMERIC },
+            new() { AnalyteCode = "SXA_A_UA",    DisplayName = "Uric Acid",              DefaultUnit = "µmol/L",  ResultType = SxaAnalyteResultType.NUMERIC },
+            new() { AnalyteCode = "SXA_A_PHOS",  DisplayName = "Inorganic Phosphorus",   DefaultUnit = "mmol/L",  ResultType = SxaAnalyteResultType.NUMERIC },
+            new() { AnalyteCode = "SXA_A_NA",    DisplayName = "Sodium",                 DefaultUnit = "mmol/L",  ResultType = SxaAnalyteResultType.NUMERIC },
+            new() { AnalyteCode = "SXA_A_K",     DisplayName = "Potassium",              DefaultUnit = "mmol/L",  ResultType = SxaAnalyteResultType.NUMERIC },
+            new() { AnalyteCode = "SXA_A_ICAL",  DisplayName = "Ionized Calcium",        DefaultUnit = "mmol/L",  ResultType = SxaAnalyteResultType.NUMERIC },
+            new() { AnalyteCode = "SXA_A_GLU",   DisplayName = "Glucose (FBS)",          DefaultUnit = "mmol/L",  ResultType = SxaAnalyteResultType.NUMERIC },
+            new() { AnalyteCode = "SXA_A_ALT",   DisplayName = "SGPT (ALT)",             DefaultUnit = "U/L",     ResultType = SxaAnalyteResultType.NUMERIC },
+            // Lipid panel
+            new() { AnalyteCode = "SXA_A_CHOL",  DisplayName = "Cholesterol",            DefaultUnit = "mmol/L",  ResultType = SxaAnalyteResultType.NUMERIC },
+            new() { AnalyteCode = "SXA_A_TRIG",  DisplayName = "Triglycerides",          DefaultUnit = "mmol/L",  ResultType = SxaAnalyteResultType.NUMERIC },
+            new() { AnalyteCode = "SXA_A_HDL",   DisplayName = "HDL Cholesterol",        DefaultUnit = "mmol/L",  ResultType = SxaAnalyteResultType.NUMERIC },
+            new() { AnalyteCode = "SXA_A_LDL",   DisplayName = "LDL Cholesterol",        DefaultUnit = "mmol/L",  ResultType = SxaAnalyteResultType.NUMERIC },
+            new() { AnalyteCode = "SXA_A_VLDL",  DisplayName = "VLDL Cholesterol",       DefaultUnit = "mmol/L",  ResultType = SxaAnalyteResultType.NUMERIC }
+        );
+        await db.SaveChangesAsync();
 
-        // Analyte definitions aligned to SXA catalog codes
-        // (code, displayName, baseValue, unit, refRangeLow, refRangeHigh, defaultFlag)
-        var cbcAnalytes = new[]
-        {
-            ("SXA_A_WBC", "White Blood Cells", 5.2,   "x10³/µL", 4.5m,  11.0m,  ""),
-            ("SXA_A_HGB", "Hemoglobin",        112.0, "g/L",     130m,  170m,   "L"),
-            ("SXA_A_HCT", "Hematocrit",        0.34,  "",        0.38m, 0.50m,  "L"),
-            ("SXA_A_PLT", "Platelets",         210.0, "x10³/µL", 150m,  400m,   ""),
+        // ── §6.1 TenantTestMaps — OBR-4 codes from HCLab ────────────────────
+        db.TenantTestMaps.AddRange(
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantTestCode = "BUNPRE",   SxaTestId = "SXA_TEST_BUN_PRE",  IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantTestCode = "BUNPOST",  SxaTestId = "SXA_TEST_BUN_POST", IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantTestCode = "DGC0074",  SxaTestId = "SXA_TEST_CBC",      IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantTestCode = "DGC0035",  SxaTestId = "SXA_TEST_FBS",      IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantTestCode = "K",        SxaTestId = "SXA_TEST_K",        IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantTestCode = "LIPID",    SxaTestId = "SXA_TEST_LIPID",    IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantTestCode = "CHEM",     SxaTestId = "SXA_TEST_CHEM",     IsActive = true },
+            // Fallback for any unmapped OBR-4 — prevents full message quarantine
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantTestCode = "MULTI",    SxaTestId = "SXA_TEST_MULTI",    IsActive = true }
+        );
+        await db.SaveChangesAsync();
+
+        // ── §6.2 TenantAnalyteMaps — all OBX-3 codes from real HCLab file ───
+        db.TenantAnalyteMaps.AddRange(
+            // Hematology
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "HGB",   AnalyteCode = "SXA_A_HGB",      IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "HCT",   AnalyteCode = "SXA_A_HCT",      IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "RBC",   AnalyteCode = "SXA_A_RBC",      IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "WBC",   AnalyteCode = "SXA_A_WBC",      IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "PLT",   AnalyteCode = "SXA_A_PLT",      IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "MCV",   AnalyteCode = "SXA_A_MCV",      IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "MCH",   AnalyteCode = "SXA_A_MCH",      IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "MCHC",  AnalyteCode = "SXA_A_MCHC",     IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "NEUT",  AnalyteCode = "SXA_A_NEUT",     IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "LYMPH", AnalyteCode = "SXA_A_LYMPH",    IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "MONO",  AnalyteCode = "SXA_A_MONO",     IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "EO",    AnalyteCode = "SXA_A_EO",       IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "BASO",  AnalyteCode = "SXA_A_BASO",     IsActive = true },
+            // Chemistry — Renal / Dialysis
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "BUNPRE",  AnalyteCode = "SXA_A_BUN_PRE",  IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "BUNPOS",  AnalyteCode = "SXA_A_BUN_POST", IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "URR",     AnalyteCode = "SXA_A_URR",      IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "KT/V",    AnalyteCode = "SXA_A_KTV",      IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "CREA",    AnalyteCode = "SXA_A_CREAT",    IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "ALB",     AnalyteCode = "SXA_A_ALB",      IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "ALKP",    AnalyteCode = "SXA_A_ALKP",     IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "UA",      AnalyteCode = "SXA_A_UA",       IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "PHOS",    AnalyteCode = "SXA_A_PHOS",     IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "NA",      AnalyteCode = "SXA_A_NA",       IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "K",       AnalyteCode = "SXA_A_K",        IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "ICAL",    AnalyteCode = "SXA_A_ICAL",     IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "FBS",     AnalyteCode = "SXA_A_GLU",      IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "ALT",     AnalyteCode = "SXA_A_ALT",      IsActive = true },
+            // Lipid panel
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "CHOL",    AnalyteCode = "SXA_A_CHOL",     IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "TRIG",    AnalyteCode = "SXA_A_TRIG",     IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "HDL",     AnalyteCode = "SXA_A_HDL",      IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "LDL",     AnalyteCode = "SXA_A_LDL",      IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "VLDL",    AnalyteCode = "SXA_A_VLDL",     IsActive = true }
+        );
+        await db.SaveChangesAsync();
+
+        // ── Seeded demo results — base values randomized ±15% per patient/date
+        var cbcAnalytes = new[] {
+            ("SXA_A_WBC",  5.2,   "x10⁹/L",  5.0m,  10.0m),
+            ("SXA_A_HGB",  112.0, "g/dL",    140m,  180m ),
+            ("SXA_A_HCT",  0.34,  "%",        42m,   52m  ),
+            ("SXA_A_PLT",  210.0, "x10⁹/L",  150m,  400m ),
+            ("SXA_A_RBC",  4.5,   "x10¹²/L", 4.5m,  6.1m ),
+        };
+        var chemAnalytes = new[] {
+            ("SXA_A_BUN_PRE",  42.0, "mmol/L", 2.99m, 8.82m),
+            ("SXA_A_BUN_POST", 18.0, "mmol/L", 2.99m, 8.82m),
+            ("SXA_A_CREAT",   450.0, "µmol/L", 55m,   115m ),
+            ("SXA_A_K",        5.1,  "mmol/L", 3.5m,  5.5m ),
+            ("SXA_A_NA",      138.0, "mmol/L", 135m,  145m ),
+            ("SXA_A_PHOS",     1.8,  "mmol/L", 0.32m, 1.45m),
+            ("SXA_A_ALB",     32.0,  "g/L",    35m,   52m  ),
+            ("SXA_A_GLU",      5.9,  "mmol/L", 3.89m, 5.83m),
         };
 
-        var chemAnalytes = new[]
-        {
-            ("SXA_A_CREAT",    "Creatinine",        8.4,  "umol/L", 55m,  115m,  "H"),
-            ("SXA_A_BUN_PRE",  "BUN Pre-Dialysis",  42.0, "mmol/L", 2.99m, 8.82m,"H"),
-            ("SXA_A_BUN_POST", "BUN Post-Dialysis", 18.0, "mmol/L", 2.99m, 8.82m,""),
-            ("SXA_A_K",        "Potassium",          5.1,  "mmol/L", 3.5m,  5.5m, "H"),
-            ("SXA_A_NA",       "Sodium",            138.0, "mmol/L", 135m,  145m, ""),
-            ("SXA_A_CA",       "Calcium",             2.1, "mg/dL",  2.2m,  2.6m, "L"),
-            ("SXA_A_PHOS",     "Phosphorus",          1.8, "mmol/L", 0.32m, 1.45m,"H"),
-            ("SXA_A_ALB",      "Albumin",            32.0, "g/L",    35m,   52m,  "L"),
-            ("SXA_A_GLU",      "Glucose (FBS)",        5.9, "mmol/L", 3.89m, 5.83m,""),
-        };
-
+        var hl7Messages  = new List<Hl7Message>();
         var orders       = new List<LabOrder>();
         var headers      = new List<ResultHeader>();
         var resultValues = new List<ResultValue>();
-
-        // Synthetic HL7 message archive — one per order batch per date
-        var hl7Messages  = new List<Hl7Message>();
+        var today        = DateOnly.FromDateTime(DateTime.UtcNow);
+        var rand         = new Random(42);
 
         foreach (var patient in patients)
         {
-            var dates = new[]
-            {
-                today.AddDays(-rand.Next(25, 35)),
-                today.AddDays(-rand.Next(3, 8))
-            };
-
+            var dates = new[] { today.AddDays(-rand.Next(25, 35)), today.AddDays(-rand.Next(3, 8)) };
             foreach (var date in dates)
             {
                 var resultDt = date.ToDateTime(new TimeOnly(8, 0), DateTimeKind.Utc);
 
-                // ── CBC order ─────────────────────────────────────────────────
-                var cbcMsgId = $"SEED-{date:yyyyMMdd}-{patient.LisPatientId}-CBC";
-                var cbcMsg = new Hl7Message
+                foreach (var (panelSuffix, analytes, testId, specimen) in new (string, (string, double, string, decimal, decimal)[], string, string)[] {
+                    ("CBC",  cbcAnalytes,  "SXA_TEST_CBC",     "Whole Blood"),
+                    ("CHEM", chemAnalytes, "SXA_TEST_BUN_PRE", "Serum")
+                })
                 {
-                    Id               = Guid.NewGuid(),
-                    TenantId         = tenant.Id,
-                    MessageControlId = cbcMsgId,
-                    RawPayload       = $"[SEEDED] CBC result for {patient.Name} on {date}",
-                    ReceivedAt       = resultDt,
-                    ProcessedFlag    = true,
-                    QuarantineFlag   = false
-                };
-                hl7Messages.Add(cbcMsg);
+                    var msgId = $"SEED-{date:yyyyMMdd}-{patient.LisPatientId}-{panelSuffix}";
+                    var msg = new Hl7Message { Id = Guid.NewGuid(), TenantId = tenant.Id, MessageControlId = msgId, RawPayload = $"[SEEDED] {panelSuffix} for {patient.Name} on {date}", ReceivedAt = resultDt, ProcessedFlag = true };
+                    hl7Messages.Add(msg);
 
-                var cbcOrder = new LabOrder
-                {
-                    Id                  = Guid.NewGuid(),
-                    TenantId            = tenant.Id,
-                    ClientId            = client.Id,
-                    PatientId           = patient.Id,
-                    AccessionNumber     = $"ACC-{date:yyyyMMdd}-{patient.LisPatientId}-CBC",
-                    SourceHl7MessageId  = cbcMsg.Id,
-                    ReleasedAt          = resultDt,
-                    CreatedAt           = resultDt
-                };
-                orders.Add(cbcOrder);
+                    var order = new LabOrder { Id = Guid.NewGuid(), TenantId = tenant.Id, ClientId = client.Id, PatientId = patient.Id, AccessionNumber = $"ACC-{date:yyyyMMdd}-{patient.LisPatientId}-{panelSuffix}", SourceHl7MessageId = msg.Id, ReleasedAt = resultDt, CreatedAt = resultDt };
+                    orders.Add(order);
 
-                var cbcHeader = new ResultHeader
-                {
-                    Id                 = Guid.NewGuid(),
-                    OrderId            = cbcOrder.Id,
-                    TenantId           = tenant.Id,
-                    SourceHl7MessageId = cbcMsg.Id,
-                    SxaTestId          = testMap.ContainsKey("SXA_TEST_CBC") ? "SXA_TEST_CBC" : null,
-                    SpecimenType       = "Whole Blood",
-                    CollectionDatetime = resultDt.AddHours(-2),
-                    ResultDatetime     = resultDt
-                };
-                headers.Add(cbcHeader);
+                    var header = new ResultHeader { Id = Guid.NewGuid(), OrderId = order.Id, TenantId = tenant.Id, SourceHl7MessageId = msg.Id, SxaTestId = testId, SpecimenType = specimen, CollectionDatetime = resultDt.AddHours(-2), ResultDatetime = resultDt };
+                    headers.Add(header);
 
-                foreach (var (code, name, baseVal, unit, refLow, refHigh, flag) in cbcAnalytes)
-                {
-                    var val = Math.Round(baseVal * (0.85 + rand.NextDouble() * 0.3), 2);
-                    var dispFlag = val < (double)refLow ? "L" : val > (double)refHigh ? "H" : "N";
-                    resultValues.Add(new ResultValue
+                    foreach (var (code, baseVal, unit, refLow, refHigh) in analytes)
                     {
-                        Id              = Guid.NewGuid(),
-                        ResultHeaderId  = cbcHeader.Id,
-                        TenantId        = tenant.Id,
-                        AnalyteCode     = analyteMap.ContainsKey(code) ? code : null,
-                        DisplayValue    = val.ToString("0.##"),
-                        ValueNumeric    = (decimal)val,
-                        Unit            = unit,
-                        ReferenceRangeLow  = refLow,
-                        ReferenceRangeHigh = refHigh,
-                        ReferenceRangeRaw  = $"{refLow}-{refHigh}",
-                        AbnormalFlag    = dispFlag,
-                        RawHl7Segment   = $"OBX|1|NM|{code}||{val}|{unit}|{refLow}-{refHigh}|{dispFlag}|||F"
-                    });
-                }
-
-                // ── CHEM order ────────────────────────────────────────────────
-                var chemMsgId = $"SEED-{date:yyyyMMdd}-{patient.LisPatientId}-CHEM";
-                var chemMsg = new Hl7Message
-                {
-                    Id               = Guid.NewGuid(),
-                    TenantId         = tenant.Id,
-                    MessageControlId = chemMsgId,
-                    RawPayload       = $"[SEEDED] Chemistry result for {patient.Name} on {date}",
-                    ReceivedAt       = resultDt,
-                    ProcessedFlag    = true,
-                    QuarantineFlag   = false
-                };
-                hl7Messages.Add(chemMsg);
-
-                var chemOrder = new LabOrder
-                {
-                    Id                  = Guid.NewGuid(),
-                    TenantId            = tenant.Id,
-                    ClientId            = client.Id,
-                    PatientId           = patient.Id,
-                    AccessionNumber     = $"ACC-{date:yyyyMMdd}-{patient.LisPatientId}-CHEM",
-                    SourceHl7MessageId  = chemMsg.Id,
-                    ReleasedAt          = resultDt,
-                    CreatedAt           = resultDt
-                };
-                orders.Add(chemOrder);
-
-                var chemHeader = new ResultHeader
-                {
-                    Id                 = Guid.NewGuid(),
-                    OrderId            = chemOrder.Id,
-                    TenantId           = tenant.Id,
-                    SourceHl7MessageId = chemMsg.Id,
-                    SxaTestId          = testMap.ContainsKey("SXA_TEST_BUN_PRE") ? "SXA_TEST_BUN_PRE" : null,
-                    SpecimenType       = "Serum",
-                    CollectionDatetime = resultDt.AddHours(-2),
-                    ResultDatetime     = resultDt
-                };
-                headers.Add(chemHeader);
-
-                foreach (var (code, name, baseVal, unit, refLow, refHigh, flag) in chemAnalytes)
-                {
-                    var val = Math.Round(baseVal * (0.85 + rand.NextDouble() * 0.3), 2);
-                    var dispFlag = val < (double)refLow ? "L" : val > (double)refHigh ? "H" : "N";
-                    resultValues.Add(new ResultValue
-                    {
-                        Id              = Guid.NewGuid(),
-                        ResultHeaderId  = chemHeader.Id,
-                        TenantId        = tenant.Id,
-                        AnalyteCode     = analyteMap.ContainsKey(code) ? code : null,
-                        DisplayValue    = val.ToString("0.##"),
-                        ValueNumeric    = (decimal)val,
-                        Unit            = unit,
-                        ReferenceRangeLow  = refLow,
-                        ReferenceRangeHigh = refHigh,
-                        ReferenceRangeRaw  = $"{refLow}-{refHigh}",
-                        AbnormalFlag    = dispFlag,
-                        RawHl7Segment   = $"OBX|1|NM|{code}||{val}|{unit}|{refLow}-{refHigh}|{dispFlag}|||F"
-                    });
+                        var val  = Math.Round(baseVal * (0.85 + rand.NextDouble() * 0.3), 2);
+                        var flag = (decimal)val < refLow ? "L" : (decimal)val > refHigh ? "H" : (string?)null;
+                        resultValues.Add(new ResultValue { Id = Guid.NewGuid(), ResultHeaderId = header.Id, TenantId = tenant.Id, AnalyteCode = code, DisplayValue = val.ToString("0.##"), ValueNumeric = (decimal)val, Unit = unit, ReferenceRangeLow = refLow, ReferenceRangeHigh = refHigh, ReferenceRangeRaw = $"{refLow}–{refHigh}", AbnormalFlag = flag, RawHl7Segment = $"OBX|NM|{code}||{val}|{unit}|||F" });
+                    }
                 }
             }
         }
 
-        db.Hl7Messages.AddRange(hl7Messages);
-        await db.SaveChangesAsync();
-
-        db.Orders.AddRange(orders);
-        await db.SaveChangesAsync();
-
-        db.ResultHeaders.AddRange(headers);
-        await db.SaveChangesAsync();
-
-        db.ResultValues.AddRange(resultValues);
-        await db.SaveChangesAsync();
+        db.Hl7Messages.AddRange(hl7Messages); await db.SaveChangesAsync();
+        db.Orders.AddRange(orders);           await db.SaveChangesAsync();
+        db.ResultHeaders.AddRange(headers);   await db.SaveChangesAsync();
+        db.ResultValues.AddRange(resultValues); await db.SaveChangesAsync();
 
         Console.WriteLine($"Database seeded successfully");
         Console.WriteLine($"  Tenant:        {tenant.Name}");
