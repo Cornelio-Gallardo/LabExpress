@@ -263,8 +263,12 @@ public class Hl7Processor
         catch (Exception ex)
         {
             result.Status = "error";
-            result.Notes  = ex.Message;
-            _logger.LogError(ex, "HL7 {MsgId}: Processing error", msg.MessageId);
+            // Surface inner exception — EF wraps DB errors in outer exception
+            var inner = ex.InnerException?.InnerException?.Message
+                     ?? ex.InnerException?.Message
+                     ?? ex.Message;
+            result.Notes  = inner;
+            _logger.LogError(ex, "HL7 {MsgId}: Processing error — {Inner}", msg.MessageId, inner);
         }
 
         return result;

@@ -73,9 +73,21 @@ var app = builder.Build();
 // Auto-migrate and seed
 using (var scope = app.Services.CreateScope())
 {
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    await db.Database.MigrateAsync();
-    await DbSeeder.SeedAsync(db);
+    var db     = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    try
+    {
+        // EnsureCreated creates schema if DB is empty; skips if tables exist
+        var created = await db.Database.EnsureCreatedAsync();
+        logger.LogInformation("DB EnsureCreated: {Created}", created ? "schema created" : "already exists");
+        await DbSeeder.SeedAsync(db);
+        logger.LogInformation("DB seed complete");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "DB init failed: {Message}", ex.Message);
+        throw; // crash on startup so the error is visible
+    }
 }
 
 // Serve wwwroot (avatars, etc.) — create folder if missing
