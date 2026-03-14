@@ -5,9 +5,20 @@ using Microsoft.EntityFrameworkCore;
 namespace Dx7Api.Services.Hl7;
 
 /// <summary>
-/// Processes HL7 messages and saves to database.
-/// ORM^O01 → saves pending order record
-/// ORU^R01 → saves final result values (updates existing pending if found)
+/// Processes HL7 messages per Dx7 CDM v1.0 §9 traceability chain:
+///
+///   HL7_Message → LabOrder → ResultHeader → ResultValue
+///
+/// Pipeline (ORU^R01):
+///   1. Archive raw payload → Hl7Message       (§2.1)
+///   2. Duplicate check on MSH-10 UNIQUE index  (§2.1)
+///   3. Resolve/create patient from PID          (§3.3)
+///   4. Create LabOrder from OBR                 (§4.1)
+///   5. Map OBR-4 → SXA_Test — quarantine whole message if unmapped (§6.1/6.3)
+///   6. Create ResultHeader                      (§4.2)
+///   7. For each OBX: map OBX-3 → SXA_Analyte  (§6.2/6.3)
+///      - unmapped OBX quarantined individually, others persist
+///   8. Create ResultValue per OBX              (§4.3)
 /// </summary>
 public class Hl7Processor
 {
@@ -16,11 +27,10 @@ public class Hl7Processor
 
     public Hl7Processor(AppDbContext db, ILogger<Hl7Processor> logger)
     {
-        _db = db;
-        _logger = logger;
+        _db = db; _logger = logger;
     }
 
-    public async Task<Hl7ProcessResult> ProcessAsync(Hl7Message msg, Guid tenantId)
+    public async Task<Hl7ProcessResult> ProcessAsync(Services.Hl7.Hl7Message msg, Guid tenantId, string rawPayload = "")
     {
         var result = new Hl7ProcessResult
         {
@@ -32,153 +42,223 @@ public class Hl7Processor
 
         try
         {
-            // 1. Resolve or auto-create patient
-            var (patient, wasCreated) = await ResolveOrCreatePatientAsync(msg, tenantId);
-            if (patient == null)
+            // ── Step 1: Archive raw HL7 (CDM §2.1) ──────────────────────────
+            var existingMsg = await _db.Hl7Messages
+                .FirstOrDefaultAsync(m => m.TenantId == tenantId && m.MessageControlId == msg.MessageId);
+
+            if (existingMsg != null)
             {
-                result.Status = "error";
-                result.Notes  = $"Could not resolve or create patient from HL7 message (no PID data).";
-                _logger.LogWarning("HL7 {MsgId}: Patient could not be resolved", msg.MessageId);
+                result.Status = "duplicate";
+                result.Notes  = $"MSH-10 '{msg.MessageId}' already processed — §2.1 UNIQUE constraint.";
+                _logger.LogInformation("HL7 duplicate MSH-10 {MsgId}", msg.MessageId);
                 return result;
             }
-            if (wasCreated)
-                _logger.LogInformation("HL7 {MsgId}: Auto-created patient {Name} (LIS: {Pid})",
-                    msg.MessageId, patient.Name, patient.LisPatientId);
 
+            var hl7Archive = new Models.Hl7Message
+            {
+                TenantId         = tenantId,
+                MessageControlId = msg.MessageId,
+                RawPayload       = rawPayload,
+                ReceivedAt       = DateTime.UtcNow,
+                ProcessedFlag    = false,
+                QuarantineFlag   = false
+            };
+            _db.Hl7Messages.Add(hl7Archive);
+            await _db.SaveChangesAsync();
+
+            // ── Step 2: Resolve patient (CDM §3.3) ──────────────────────────
+            var (patient, _) = await ResolveOrCreatePatientAsync(msg, tenantId);
+            if (patient == null)
+            {
+                hl7Archive.QuarantineFlag   = true;
+                hl7Archive.QuarantineReason = "No patient identity (no PID-3 or PID-5).";
+                await _db.SaveChangesAsync();
+                result.Status = "error";
+                result.Notes  = hl7Archive.QuarantineReason;
+                return result;
+            }
             result.PatientName = patient.Name;
 
-            var resultDate = DateOnly.FromDateTime(
-                msg.ObservationDateTime != default ? msg.ObservationDateTime : DateTime.UtcNow);
+            var obsDateTime = msg.ObservationDateTime != default ? msg.ObservationDateTime : DateTime.UtcNow;
 
-            // ── ORM^O01 — Order message ───────────────────────────────────────
+            // ── ORM^O01 — incoming order, write LabOrder as pending ──────────
             if (msg.IsOrder)
             {
-                // Save a pending record for the ordered test
-                // This appears in the patient's results as "Pending"
-                var exists = await _db.Results.AnyAsync(r =>
-                    r.TenantId   == tenantId &&
-                    r.PatientId  == patient.Id &&
-                    r.AccessionId == msg.AccessionId &&
-                    r.TestCode   == msg.TestCode);
+                var orderExists = await _db.Orders.AnyAsync(o =>
+                    o.TenantId        == tenantId &&
+                    o.PatientId       == patient.Id &&
+                    o.AccessionNumber == msg.AccessionId);
 
-                if (!exists && !string.IsNullOrEmpty(msg.TestCode))
+                if (!orderExists)
                 {
-                    _db.Results.Add(new Result
+                    _db.Orders.Add(new LabOrder
                     {
-                        TenantId      = tenantId,
-                        PatientId     = patient.Id,
-                        TestCode      = msg.TestCode,
-                        TestName      = msg.TestName,
-                        ResultValue   = null,           // no value yet
-                        ResultStatus  = "pending",
-                        ResultDate    = resultDate,
-                        SourceLab     = msg.SendingFacility,
-                        AccessionId   = msg.AccessionId,
-                        SourceMessageId = msg.MessageId,
+                        TenantId           = tenantId,
+                        ClientId           = patient.ClientId,
+                        PatientId          = patient.Id,
+                        AccessionNumber    = msg.AccessionId,
+                        SourceHl7MessageId = hl7Archive.Id,
+                        ReleasedAt         = null,
+                        CreatedAt          = DateTime.UtcNow,
                     });
-
+                    hl7Archive.ProcessedFlag = true;
                     await _db.SaveChangesAsync();
-                    result.Status      = "order_saved";
+                    result.Status       = "order_saved";
                     result.ResultsSaved = 1;
-                    result.Notes       = $"Pending order saved: {msg.TestName} (Acc: {msg.AccessionId})";
+                    result.Notes        = $"Order created: accession {msg.AccessionId}";
                 }
                 else
                 {
+                    hl7Archive.QuarantineFlag   = true;
+                    hl7Archive.QuarantineReason = $"Duplicate ORM: accession {msg.AccessionId} already exists.";
+                    await _db.SaveChangesAsync();
                     result.Status = "duplicate";
-                    result.Notes  = $"Order already exists for accession {msg.AccessionId} / {msg.TestCode}";
+                    result.Notes  = hl7Archive.QuarantineReason;
                 }
-
-                _logger.LogInformation("HL7 {MsgId}: ORM {Status} — {Patient} / {Test}",
-                    msg.MessageId, result.Status, patient.Name, msg.TestName);
                 return result;
             }
 
-            // ── ORU^R01 — Result message ──────────────────────────────────────
+            // ── ORU^R01 — result message ─────────────────────────────────────
             if (msg.IsResult)
             {
                 if (msg.Observations.Count == 0)
                 {
-                    // ORU with no OBX — treat the OBR test itself as final
+                    hl7Archive.QuarantineFlag   = true;
+                    hl7Archive.QuarantineReason = "ORU has no OBX segments.";
+                    await _db.SaveChangesAsync();
                     result.Status = "skipped";
-                    result.Notes  = "ORU has no OBX segments";
+                    result.Notes  = hl7Archive.QuarantineReason;
                     return result;
                 }
 
-                int saved    = 0;
-                int updated  = 0;
-                int skipped  = 0;
+                // ── Step 3: Map OBR-4 → SXA_Test (CDM §6.1) ────────────────
+                // If OBR-4 unmapped, fall back to SXA_TEST_MULTI (multi-panel)
+                // rather than quarantining — real HCLab files send all analytes
+                // under one OBR regardless of panel type.
+                var testMap = await ResolveTestMap(msg.TestCode, tenantId);
+                if (testMap == null)
+                {
+                    testMap = await _db.TenantTestMaps
+                        .Include(m => m.SxaTest)
+                        .FirstOrDefaultAsync(m => m.TenantId == tenantId && m.TenantTestCode == "MULTI" && m.IsActive);
+                }
+                // If still null (MULTI not seeded), log warning but continue — SxaTestId will be null
+                if (testMap == null)
+                    _logger.LogWarning("HL7 {MsgId}: OBR-4 '{Code}' unmapped and no MULTI fallback", msg.MessageId, msg.TestCode);
+
+                // ── Step 4: Create/find LabOrder (CDM §4.1) ─────────────────
+                var order = await _db.Orders.FirstOrDefaultAsync(o =>
+                    o.TenantId        == tenantId &&
+                    o.PatientId       == patient.Id &&
+                    o.AccessionNumber == msg.AccessionId);
+
+                if (order == null)
+                {
+                    order = new LabOrder
+                    {
+                        TenantId           = tenantId,
+                        ClientId           = patient.ClientId,
+                        PatientId          = patient.Id,
+                        AccessionNumber    = msg.AccessionId,
+                        SourceHl7MessageId = hl7Archive.Id,
+                        ReleasedAt         = obsDateTime,
+                        CreatedAt          = DateTime.UtcNow,
+                    };
+                    _db.Orders.Add(order);
+                    await _db.SaveChangesAsync();
+                }
+                else if (order.ReleasedAt == null)
+                {
+                    // Fulfil the pending ORM order
+                    order.ReleasedAt = obsDateTime;
+                    await _db.SaveChangesAsync();
+                }
+
+                // ── Step 5: Create ResultHeader (CDM §4.2) ───────────────────
+                var header = new ResultHeader
+                {
+                    OrderId            = order.Id,
+                    TenantId           = tenantId,
+                    SourceHl7MessageId = hl7Archive.Id,
+                    SxaTestId          = testMap.SxaTestId,
+                    CollectionDatetime = msg.ObservationDateTime != default ? msg.ObservationDateTime : null,
+                    ResultDatetime     = obsDateTime,
+                };
+                _db.ResultHeaders.Add(header);
+                await _db.SaveChangesAsync();
+
+                // ── Step 6: Create ResultValue per OBX (CDM §4.3) ───────────
+                int saved       = 0;
+                int quarantined = 0;
 
                 foreach (var obs in msg.Observations)
                 {
-                    var testCode = !string.IsNullOrEmpty(obs.TestCode) ? obs.TestCode : msg.TestCode;
-                    var testName = !string.IsNullOrEmpty(obs.TestName) ? obs.TestName : msg.TestName;
-                    var obsDate  = obs.ObservationDateTime != default
-                        ? DateOnly.FromDateTime(obs.ObservationDateTime)
-                        : resultDate;
+                    var obxCode = !string.IsNullOrEmpty(obs.TestCode) ? obs.TestCode : msg.TestCode;
 
-                    if (string.IsNullOrWhiteSpace(obs.ResultValue)) { skipped++; continue; }
+                    // Skip blank values and quoted-empty strings (e.g. DIFF header has value="\"\"")
+                    var cleanValue = obs.ResultValue.Trim().Trim('"');
+                    if (string.IsNullOrWhiteSpace(cleanValue)) continue;
 
-                    var status = obs.ResultStatus switch
+                    // Skip ST-type OBX that are status/header rows (e.g. value="COMPLETED", value="DIFF")
+                    // Real result values are NM type or parseable text — not status keywords
+                    var statusKeywords = new[] { "COMPLETED", "PENDING", "DIFF", "DIFFERENTIAL COUNT", "SEE NOTE" };
+                    if (statusKeywords.Any(k => obs.ResultValue.Trim().Equals(k, StringComparison.OrdinalIgnoreCase)))
+                        continue;
+
+                    // Map OBX-3 → SXA_Analyte (CDM §6.2)
+                    var analyteMap = await ResolveAnalyteMap(obxCode, tenantId);
+                    if (analyteMap == null)
                     {
-                        "F" => "final",
-                        "C" => "corrected",
-                        "P" => "preliminary",
-                        _   => "final"
-                    };
-
-                    // Check if a pending order record exists for this accession+test → update it
-                    var existing = await _db.Results.FirstOrDefaultAsync(r =>
-                        r.TenantId    == tenantId &&
-                        r.PatientId   == patient.Id &&
-                        r.AccessionId == msg.AccessionId &&
-                        r.TestCode    == testCode);
-
-                    if (existing != null)
-                    {
-                        // Update pending → final
-                        existing.ResultValue   = obs.ResultValue;
-                        existing.ResultUnit    = obs.ResultUnit;
-                        existing.ReferenceRange = obs.ReferenceRange;
-                        existing.AbnormalFlag  = obs.AbnormalFlag;
-                        existing.ResultDate    = obsDate;
-                        existing.ResultStatus  = status;
-                        existing.UpdatedAt     = DateTime.UtcNow;
-                        updated++;
+                        // Per §6.3: quarantine this OBX only, others persist
+                        quarantined++;
+                        hl7Archive.QuarantineFlag   = true;
+                        hl7Archive.QuarantineReason = (hl7Archive.QuarantineReason ?? "") +
+                            $" OBX-3 '{obxCode}' unmapped.";
+                        _logger.LogWarning("HL7 {MsgId}: OBX-3 '{Code}' unmapped — analyte quarantined", msg.MessageId, obxCode);
+                        continue;
                     }
-                    else
+
+                    decimal? numeric = null;
+                    if (decimal.TryParse(cleanValue,
+                        System.Globalization.NumberStyles.Any,
+                        System.Globalization.CultureInfo.InvariantCulture, out var parsed))
+                        numeric = parsed;
+
+                    (decimal? low, decimal? high) = ParseRefRange(obs.ReferenceRange);
+
+                    _db.ResultValues.Add(new ResultValue
                     {
-                        // New result (no prior order)
-                        _db.Results.Add(new Result
-                        {
-                            TenantId        = tenantId,
-                            PatientId       = patient.Id,
-                            TestCode        = testCode,
-                            TestName        = testName,
-                            ResultValue     = obs.ResultValue,
-                            ResultUnit      = obs.ResultUnit,
-                            ReferenceRange  = obs.ReferenceRange,
-                            AbnormalFlag    = obs.AbnormalFlag,
-                            ResultDate      = obsDate,
-                            ResultStatus    = status,
-                            SourceLab       = msg.SourceLab.Length > 0 ? msg.SourceLab : msg.SendingFacility,
-                            AccessionId     = msg.AccessionId,
-                            SourceMessageId = msg.MessageId,
-                        });
-                        saved++;
-                    }
+                        ResultHeaderId    = header.Id,
+                        TenantId          = tenantId,
+                        AnalyteCode       = analyteMap.AnalyteCode,
+                        DisplayValue      = cleanValue,        // pass-through, no transformation
+                        ValueNumeric      = numeric,
+                        Unit              = obs.ResultUnit,
+                        ReferenceRangeLow   = low,
+                        ReferenceRangeHigh  = high,
+                        ReferenceRangeRaw   = obs.ReferenceRange,
+                        AbnormalFlag      = obs.AbnormalFlag is "H" or "L" or "N" ? obs.AbnormalFlag : null,  // OBX-8 raw — H/L/N stored
+                        RawHl7Segment     = obs.RawSegment,    // full OBX retained
+                    });
+                    saved++;
                 }
 
+                if (quarantined == 0) hl7Archive.ProcessedFlag = true;
                 await _db.SaveChangesAsync();
-                result.Status      = "processed";
-                result.ResultsSaved = saved + updated;
-                result.Notes       = $"Saved {saved} new, updated {updated} pending, skipped {skipped}";
-                _logger.LogInformation("HL7 {MsgId}: ORU saved {Count} results for {Patient}",
-                    msg.MessageId, saved + updated, patient.Name);
+
+                result.Status       = quarantined > 0 && saved == 0 ? "error" : "processed";
+                result.ResultsSaved = saved;
+                result.Notes        = $"Saved {saved} ResultValue(s)" +
+                                      (quarantined > 0 ? $", quarantined {quarantined} unmapped analyte(s)" : "");
+                _logger.LogInformation("HL7 {MsgId}: {Notes}", msg.MessageId, result.Notes);
                 return result;
             }
 
             result.Status = "unknown";
             result.Notes  = $"Unhandled message type: {msg.MessageType}";
+            hl7Archive.QuarantineFlag   = true;
+            hl7Archive.QuarantineReason = result.Notes;
+            await _db.SaveChangesAsync();
         }
         catch (Exception ex)
         {
@@ -190,10 +270,61 @@ public class Hl7Processor
         return result;
     }
 
-    private async Task<(Patient? patient, bool wasCreated)> ResolveOrCreatePatientAsync(
-        Hl7Message msg, Guid tenantId)
+    // ── Map lookups ───────────────────────────────────────────────────────────
+
+    private async Task<TenantTestMap?> ResolveTestMap(string obr4Code, Guid tenantId)
     {
-        // 1. Match by LIS Patient ID
+        if (string.IsNullOrEmpty(obr4Code)) return null;
+        var code = obr4Code.Split('^')[0].Trim();
+        return await _db.TenantTestMaps
+            .Include(m => m.SxaTest)
+            .FirstOrDefaultAsync(m => m.TenantId == tenantId && m.TenantTestCode == code && m.IsActive);
+    }
+
+    private async Task<TenantAnalyteMap?> ResolveAnalyteMap(string obx3Code, Guid tenantId)
+    {
+        if (string.IsNullOrEmpty(obx3Code)) return null;
+        var code = obx3Code.Split('^')[0].Trim();
+        return await _db.TenantAnalyteMaps
+            .Include(m => m.Analyte)
+            .FirstOrDefaultAsync(m => m.TenantId == tenantId && m.TenantAnalyteCode == code && m.IsActive);
+    }
+
+    private static (decimal? low, decimal? high) ParseRefRange(string? raw)
+    {
+        if (string.IsNullOrEmpty(raw)) return (null, null);
+
+        // Handle "< 3.4" format (upper bound only)
+        if (raw.TrimStart().StartsWith("<"))
+        {
+            var part = raw.Replace("<", "").Trim();
+            return decimal.TryParse(part, System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var hi) ? (null, hi) : (null, null);
+        }
+
+        // Handle "X.XX - Y.YY" with spaces, or "X.XX-Y.YY" without
+        // Split on " - " first, then fall back to "-"
+        string[] parts;
+        if (raw.Contains(" - "))
+            parts = raw.Split(new[] { " - " }, StringSplitOptions.None);
+        else
+            parts = raw.Split('-');
+
+        if (parts.Length == 2 &&
+            decimal.TryParse(parts[0].Trim(), System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var lo) &&
+            decimal.TryParse(parts[1].Trim(), System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var hi2))
+            return (lo, hi2);
+
+        return (null, null);
+    }
+
+    // ── Patient resolution (CDM §3.3) ─────────────────────────────────────────
+
+    private async Task<(Patient? patient, bool wasCreated)> ResolveOrCreatePatientAsync(
+        Services.Hl7.Hl7Message msg, Guid tenantId)
+    {
         if (!string.IsNullOrEmpty(msg.PatientId))
         {
             var byId = await _db.Patients.FirstOrDefaultAsync(p =>
@@ -201,7 +332,6 @@ public class Hl7Processor
             if (byId != null) return (byId, false);
         }
 
-        // 2. Match by full name
         if (!string.IsNullOrEmpty(msg.PatientName))
         {
             var byName = await _db.Patients.FirstOrDefaultAsync(p =>
@@ -210,49 +340,29 @@ public class Hl7Processor
                 p.IsActive);
             if (byName != null)
             {
-                // Update LIS ID if missing
                 if (string.IsNullOrEmpty(byName.LisPatientId) && !string.IsNullOrEmpty(msg.PatientId))
-                {
-                    byName.LisPatientId = msg.PatientId;
-                    await _db.SaveChangesAsync();
-                }
+                { byName.LisPatientId = msg.PatientId; await _db.SaveChangesAsync(); }
                 return (byName, false);
             }
         }
 
-        // 3. Auto-create from HL7 PID data
         if (string.IsNullOrEmpty(msg.PatientId) && string.IsNullOrEmpty(msg.PatientName))
             return (null, false);
 
-        // Parse birthdate
         DateOnly? dob = null;
         if (!string.IsNullOrEmpty(msg.PatientDob) && msg.PatientDob.Length >= 8)
-        {
             if (DateOnly.TryParseExact(msg.PatientDob[..8], "yyyyMMdd", out var parsedDob))
                 dob = parsedDob;
-        }
 
-        // Parse gender
-        var gender = msg.PatientGender?.ToUpper() switch {
-            "M" => "M", "F" => "F", _ => null
-        };
+        var gender = msg.PatientGender?.ToUpper() switch { "M" => "M", "F" => "F", _ => null };
+        var name   = !string.IsNullOrEmpty(msg.PatientName) ? msg.PatientName : msg.PatientId;
 
-        // Build full name: "LASTNAME, Firstname"
-        var name = !string.IsNullOrEmpty(msg.PatientName)
-            ? msg.PatientName
-            : msg.PatientId; // fallback to MR number if no name
-
-        // Get default client for this tenant (first active clinic)
         var defaultClient = await _db.Clients
             .Where(c => c.TenantId == tenantId && c.IsActive)
             .OrderBy(c => c.CreatedAt)
             .FirstOrDefaultAsync();
 
-        if (defaultClient == null)
-        {
-            _logger.LogWarning("HL7: No active client/clinic found for tenant {TenantId}", tenantId);
-            return (null, false);
-        }
+        if (defaultClient == null) return (null, false);
 
         var newPatient = new Patient
         {
@@ -265,10 +375,8 @@ public class Hl7Processor
             IsActive     = true,
             CreatedAt    = DateTime.UtcNow,
         };
-
         _db.Patients.Add(newPatient);
         await _db.SaveChangesAsync();
-
         return (newPatient, true);
     }
 }

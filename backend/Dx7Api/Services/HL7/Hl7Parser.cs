@@ -9,10 +9,16 @@ public static class Hl7Parser
     public static Hl7Message Parse(string rawMessage)
     {
         // Normalize line endings: \r, \r\n, \n all become \n
-        var lines = rawMessage
-            .Replace("\r\n", "\n")
-            .Replace("\r", "\n")
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        // Also handle files where segments have no newlines at all
+        var normalized = rawMessage.Replace("\r\n", "\n").Replace("\r", "\n").Trim();
+        if (!normalized.Contains("\n"))
+        {
+            var segIds = new[]{"MSH","PID","PV1","PV2","ORC","OBR","OBX","NTE","SPM","SAC","IN1"};
+            foreach (var s in segIds)
+                normalized = System.Text.RegularExpressions.Regex.Replace(
+                    normalized, $@"(?<!^)(?={s}\|)", "\n");
+        }
+        var lines = normalized.Split('\n', StringSplitOptions.RemoveEmptyEntries);
 
         var msg = new Hl7Message();
 
@@ -27,7 +33,7 @@ public static class Hl7Parser
                 case "MSH": ParseMsh(seg, msg); break;
                 case "PID": ParsePid(seg, msg); break;
                 case "OBR": ParseObr(seg, msg); break;
-                case "OBX": msg.Observations.Add(ParseObx(seg)); break;
+                case "OBX": msg.Observations.Add(ParseObx(seg, line)); break;
             }
         }
 
@@ -61,13 +67,18 @@ public static class Hl7Parser
 
     private static void ParseObr(string[] seg, Hl7Message msg)
     {
-        // OBR-2: placer order number — format: 178..BLD000035^InstaHMS
+        // OBR-2: placer order number
         var obr2 = GetField(seg, 2).Split('^');
         msg.PlacerOrderNumber = obr2.Length > 0 ? obr2[0] : "";
 
+        // OBR-3: filler order number (accession) — CDM §4.1 uses OBR-3
+        // Falls back to OBR-2 if OBR-3 empty (some LIS implementations vary)
+        var obr3 = GetField(seg, 3).Split('^');
+        var fillerNum = obr3.Length > 0 ? obr3[0] : "";
+        var accRaw = !string.IsNullOrEmpty(fillerNum) ? fillerNum : msg.PlacerOrderNumber;
         // Extract accession: 178..BLD000035 → BLD000035
-        var parts = msg.PlacerOrderNumber.Split("..");
-        msg.AccessionId = parts.Length > 1 ? parts[1] : msg.PlacerOrderNumber;
+        var parts = accRaw.Split("..");
+        msg.AccessionId = parts.Length > 1 ? parts[1] : accRaw;
 
         // OBR-4: test code — format: DGC0074^CBC (COMPLETE BLOOD COUNT)^InstaHMS^^
         var obr4 = GetField(seg, 4).Split('^');
@@ -83,7 +94,7 @@ public static class Hl7Parser
         msg.SourceLab = GetField(seg, 18);
     }
 
-    private static Hl7Observation ParseObx(string[] seg)
+    private static Hl7Observation ParseObx(string[] seg, string rawLine)
     {
         // OBX-3: test identifier — format: code^name^system
         var obx3 = GetField(seg, 3).Split('^');
@@ -109,6 +120,7 @@ public static class Hl7Parser
             },
             ObservationDateTime = ParseHl7DateTime(GetField(seg, 14)),
             ResultStatus   = GetField(seg, 11), // F=Final, P=Preliminary, C=Corrected
+            RawSegment     = rawLine,
         };
     }
 
@@ -177,4 +189,5 @@ public class Hl7Observation
     public string AbnormalFlag        { get; set; } = "N";
     public string ResultStatus        { get; set; } = "F";
     public DateTime ObservationDateTime { get; set; }
+    public string RawSegment { get; set; } = "";  // complete OBX — CDM §4.3 traceability
 }

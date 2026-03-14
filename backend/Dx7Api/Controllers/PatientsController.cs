@@ -19,13 +19,11 @@ public class PatientsController : TenantBaseController
         [FromQuery] string? search,
         [FromQuery] string? status)
     {
-        // PL Admin can pass any clientId within their tenant
-        // All other roles are locked to their own ClientId from JWT
         Guid? resolvedClientId;
         if (IsPlAdmin)
             resolvedClientId = clientId ?? ClientId;
         else
-            resolvedClientId = ClientId; // always enforce own clinic
+            resolvedClientId = ClientId;
 
         var query = _db.Patients
             .Where(p => p.TenantId == TenantId && p.IsActive);
@@ -41,38 +39,60 @@ public class PatientsController : TenantBaseController
         var patients = await query.OrderBy(p => p.Name).ToListAsync();
         var patientIds = patients.Select(p => p.Id).ToList();
 
-        var latestResults = await _db.Results
-            .Where(r => patientIds.Contains(r.PatientId) && r.TenantId == TenantId)
-            .GroupBy(r => r.PatientId)
-            .Select(g => new { PatientId = g.Key, LastDate = g.Max(r => r.ResultDate) })
-            .ToDictionaryAsync(x => x.PatientId, x => x.LastDate);
+        // ── CDM chain: last result date and distinct date count per patient ──
+        // Step 1: orders for these patients
+        var orders = await _db.Orders
+            .Where(o => patientIds.Contains(o.PatientId) && o.TenantId == TenantId)
+            .ToListAsync();
 
-        // Count of distinct result dates per patient
-        var resultDateCounts = await _db.Results
-            .Where(r => patientIds.Contains(r.PatientId) && r.TenantId == TenantId)
-            .GroupBy(r => new { r.PatientId, r.ResultDate })
-            .Select(g => new { g.Key.PatientId, g.Key.ResultDate })
-            .GroupBy(r => r.PatientId)
-            .Select(g => new { PatientId = g.Key, Count = g.Count() })
-            .ToDictionaryAsync(x => x.PatientId, x => x.Count);
+        var orderIds = orders.Select(o => o.Id).ToList();
 
+        // Step 2: result dates from ResultHeaders (one ResultDatetime per header)
+        var headerDates = orderIds.Count == 0
+            ? new List<(Guid PatientId, DateTime ResultDatetime)>()
+            : await _db.ResultHeaders
+                .Where(h => orderIds.Contains(h.OrderId) && h.TenantId == TenantId && h.ResultDatetime != null)
+                .Select(h => new { h.OrderId, h.ResultDatetime })
+                .ToListAsync()
+                .ContinueWith(t => t.Result
+                    .Select(h => (
+                        PatientId: orders.First(o => o.Id == h.OrderId).PatientId,
+                        ResultDatetime: h.ResultDatetime!.Value
+                    )).ToList());
+
+        // Step 3: derive last date and distinct date count per patient in memory
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        var latestByPatient = headerDates
+            .GroupBy(x => x.PatientId)
+            .ToDictionary(
+                g => g.Key,
+                g => DateOnly.FromDateTime(g.Max(x => x.ResultDatetime))
+            );
+
+        var dateCountByPatient = headerDates
+            .GroupBy(x => x.PatientId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(x => DateOnly.FromDateTime(x.ResultDatetime)).Distinct().Count()
+            );
 
         var dtos = patients.Select(p =>
         {
-            latestResults.TryGetValue(p.Id, out var lastDate);
+            latestByPatient.TryGetValue(p.Id, out var lastDate);
             var days = lastDate != default ? today.DayNumber - lastDate.DayNumber : (int?)null;
             var resultStatus = lastDate == default ? "nodata"
                 : days > 30 ? "stale" : "ready";
 
             if (!string.IsNullOrEmpty(status) && status != resultStatus) return null;
 
-            resultDateCounts.TryGetValue(p.Id, out var dateCount);
+            dateCountByPatient.TryGetValue(p.Id, out var dateCount);
 
             return new PatientDto(
                 p.Id, p.Name, p.LisPatientId, p.PhilhealthNo,
                 p.Birthdate, p.Gender, p.ContactNumber,
-                p.IsActive, resultStatus, days, lastDate == default ? null : lastDate,
+                p.IsActive, resultStatus, days,
+                lastDate == default ? null : lastDate,
                 dateCount
             );
         })
@@ -85,7 +105,6 @@ public class PatientsController : TenantBaseController
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(Guid id)
     {
-        // Always scope to tenant, and to client unless PL Admin
         var query = _db.Patients.Where(p => p.Id == id && p.TenantId == TenantId);
         if (!IsPlAdmin && ClientId.HasValue)
             query = query.Where(p => p.ClientId == ClientId.Value);
@@ -94,22 +113,29 @@ public class PatientsController : TenantBaseController
         if (p == null) return NotFound();
 
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var lastResult = await _db.Results
-            .Where(r => r.PatientId == id && r.TenantId == TenantId)
-            .OrderByDescending(r => r.ResultDate)
+
+        // Latest ResultDatetime from CDM chain
+        var lastHeader = await _db.Orders
+            .Where(o => o.PatientId == id && o.TenantId == TenantId)
+            .Join(_db.ResultHeaders, o => o.Id, h => h.OrderId, (o, h) => h)
+            .Where(h => h.ResultDatetime != null)
+            .OrderByDescending(h => h.ResultDatetime)
             .FirstOrDefaultAsync();
 
-        var days = lastResult != null ? today.DayNumber - lastResult.ResultDate.DayNumber : (int?)null;
-        var resultStatus = lastResult == null ? "nodata" : days > 30 ? "stale" : "ready";
+        var lastDate = lastHeader?.ResultDatetime != null
+            ? DateOnly.FromDateTime(lastHeader.ResultDatetime.Value)
+            : (DateOnly?)null;
+
+        var days = lastDate.HasValue ? today.DayNumber - lastDate.Value.DayNumber : (int?)null;
+        var resultStatus = lastDate == null ? "nodata" : days > 30 ? "stale" : "ready";
 
         return Ok(new PatientDto(p.Id, p.Name, p.LisPatientId, p.PhilhealthNo, p.Birthdate, p.Gender,
-            p.ContactNumber, p.IsActive, resultStatus, days, lastResult?.ResultDate));
+            p.ContactNumber, p.IsActive, resultStatus, days, lastDate));
     }
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreatePatientRequest req)
     {
-        // Charge nurse and admins can create patients; shift nurse and MD cannot
         if (!IsChargeNurse && !IsClinicAdmin && !IsPlAdmin)
             return Forbid();
 
@@ -117,13 +143,13 @@ public class PatientsController : TenantBaseController
 
         var patient = new Patient
         {
-            TenantId = TenantId,
-            ClientId = ClientId.Value,
-            Name = req.Name,
+            TenantId     = TenantId,
+            ClientId     = ClientId.Value,
+            Name         = req.Name,
             LisPatientId = req.LisPatientId,
             PhilhealthNo = req.PhilhealthNo,
-            Birthdate = req.Birthdate,
-            Gender = req.Gender,
+            Birthdate    = req.Birthdate,
+            Gender       = req.Gender,
             ContactNumber = req.ContactNumber
         };
 

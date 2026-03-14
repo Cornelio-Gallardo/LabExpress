@@ -15,13 +15,9 @@
             <div class="user-name">{{ auth.user?.name }}</div>
             <div class="user-email">{{ auth.user?.email }}</div>
           </div>
-          <!-- Circle avatar icon like screenshots -->
-          <div class="user-avatar">
-            <svg viewBox="0 0 24 24" fill="none" width="22" height="22">
-              <circle cx="12" cy="8" r="4" fill="#9ca3af"/>
-              <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke="#9ca3af" stroke-width="1.5" fill="none" stroke-linecap="round"/>
-            </svg>
-          </div>
+          <!-- Dynamic avatar: photo or initials -->
+          <img v-if="headerAvatarUrl" :src="headerAvatarUrl" class="header-avatar-img" :alt="auth.user?.name" @error="headerAvatarUrl = null" />
+          <span v-else class="header-avatar-initials" :style="{ background: headerAvatarBg }">{{ headerInitials }}</span>
         </div>
         <button class="btn-pdf" @click="logout">Sign Out</button>
       </div>
@@ -34,7 +30,7 @@
         <!-- Clinical section -->
         <template v-if="auth.isClinical || auth.isAdmin">
           <div class="nav-section-label">Clinical</div>
-          <router-link v-if="auth.canSelectShift" to="/shifts" class="nav-item" active-class="active">
+          <router-link v-if="auth.canSelectShift" to="/dashboard" class="nav-item" active-class="active">
             <span class="nav-icon">
               <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/></svg>
             </span>
@@ -44,19 +40,13 @@
         </template>
 
         <!-- Management section -->
-        <template v-if="auth.isAdmin || auth.canManageShifts">
+        <template v-if="auth.isAdmin">
           <div class="nav-section-label">Management</div>
           <router-link v-if="auth.isAdmin" to="/patients" class="nav-item" active-class="active">
             <span class="nav-icon">
               <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v1h8v-1zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-1a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v1h-3zM4.75 14.094A5.973 5.973 0 004 17v1H1v-1a3 3 0 013.75-2.906z"/></svg>
             </span>
             Patient Management
-          </router-link>
-          <router-link v-if="auth.canManageShifts" to="/shift-management" class="nav-item" active-class="active">
-            <span class="nav-icon">
-              <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"/></svg>
-            </span>
-            Shift Management
           </router-link>
           <router-link v-if="auth.canManageUsers" to="/users" class="nav-item" active-class="active">
             <span class="nav-icon">
@@ -104,8 +94,10 @@
 </template>
 
 <script setup>
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from './store/auth'
+import api from './services/api'
 
 const auth   = useAuthStore()
 const router = useRouter()
@@ -115,7 +107,50 @@ function logout() {
   router.push('/login')
 }
 
-// roleLabel comes from DB via auth.roles store
+// ── Header avatar ──
+const headerAvatarUrl = ref(null)
+
+const avatarPalette = ['#1d4ed8','#0891b2','#059669','#7c3aed','#db2777','#d97706','#dc2626','#0284c7']
+
+const headerAvatarBg = computed(() => {
+  const name = auth.user?.name || ''
+  if (!name) return '#6b7280'
+  let hash = 0
+  for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) & 0xffffffff
+  return avatarPalette[Math.abs(hash) % avatarPalette.length]
+})
+
+const headerInitials = computed(() => {
+  const name = auth.user?.name || ''
+  if (!name) return '?'
+  const parts = name.trim().split(/\s+/)
+  return parts.length >= 2
+    ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+    : name.slice(0, 2).toUpperCase()
+})
+
+async function loadHeaderAvatar() {
+  if (!auth.isLoggedIn) return
+  try {
+    const { data } = await api.get('/users/me')
+    console.log('[avatar] /me response:', data.avatarUrl)
+    headerAvatarUrl.value = data.avatarUrl ? data.avatarUrl + '?t=' + Date.now() : null
+  } catch (e) {
+    console.log('[avatar] /me error:', e.message)
+    headerAvatarUrl.value = null
+  }
+}
+
+onMounted(() => {
+  loadHeaderAvatar()
+  // retry once after a short delay in case token wasn't ready
+  setTimeout(loadHeaderAvatar, 800)
+})
+
+watch(() => auth.isLoggedIn, (loggedIn) => {
+  if (loggedIn) loadHeaderAvatar()
+  else headerAvatarUrl.value = null
+})
 </script>
 
 <style scoped>
