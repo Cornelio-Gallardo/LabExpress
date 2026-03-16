@@ -15,10 +15,13 @@
 
       <!-- SSO Buttons -->
       <div class="sso-row">
-        <button class="sso-btn sso-google" @click="loginWithGoogle" :disabled="ssoLoading === 'google'">
-          <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.08 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-3.59-13.46-8.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
-          {{ ssoLoading === 'google' ? 'Signing in…' : 'Continue with Google' }}
-        </button>
+        <div class="sso-google-wrapper" :class="{ 'sso-loading': ssoLoading === 'google' }">
+          <div id="g-signin-container"></div>
+          <div v-if="ssoLoading === 'google'" class="sso-btn sso-google sso-overlay">
+            <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.08 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-3.59-13.46-8.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+            Signing in…
+          </div>
+        </div>
         <button class="sso-btn sso-facebook" @click="loginWithFacebook" :disabled="ssoLoading === 'facebook'">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="#1877F2"><path d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.1 4.388 23.094 10.125 24v-8.437H7.078v-3.49h3.047V9.41c0-3.025 1.792-4.697 4.533-4.697 1.312 0 2.686.236 2.686.236v2.97h-1.513c-1.491 0-1.956.93-1.956 1.886v2.267h3.328l-.532 3.49h-2.796V24C19.612 23.094 24 18.1 24 12.073z"/></svg>
           {{ ssoLoading === 'facebook' ? 'Signing in…' : 'Continue with Facebook' }}
@@ -91,24 +94,34 @@ async function handleSsoToken(provider, token) {
   } finally { ssoLoading.value = null }
 }
 
-function loginWithGoogle() {
-  if (!window.google?.accounts) { error.value = 'Google SDK not loaded yet. Please wait a moment and try again.'; return }
+function initGoogleButton() {
+  if (!window.google?.accounts?.id) return
   window.google.accounts.id.initialize({
     client_id: GOOGLE_CLIENT_ID,
-    callback: (response) => handleSsoToken('google', response.credential)
+    callback: (response) => {
+      if (response.credential) handleSsoToken('google', response.credential)
+    }
   })
-  window.google.accounts.id.prompt()
+  const container = document.getElementById('g-signin-container')
+  if (container) {
+    window.google.accounts.id.renderButton(container, {
+      theme: 'outline', size: 'large', text: 'continue_with', width: 340
+    })
+  }
 }
 
 function loginWithFacebook() {
   if (!window.FB) { error.value = 'Facebook SDK not loaded yet. Please wait a moment and try again.'; return }
+  ssoLoading.value = 'facebook'
+  error.value = ''
   window.FB.login((response) => {
     if (response.authResponse?.accessToken) {
       handleSsoToken('facebook', response.authResponse.accessToken)
     } else {
+      ssoLoading.value = null
       error.value = 'Facebook sign-in was cancelled.'
     }
-  }, { scope: 'public_profile' })
+  }, { scope: 'public_profile,email' })
 }
 
 onMounted(() => {
@@ -117,7 +130,10 @@ onMounted(() => {
     s.id = 'google-gsi-script'
     s.src = 'https://accounts.google.com/gsi/client'
     s.async = true; s.defer = true
+    s.onload = initGoogleButton
     document.head.appendChild(s)
+  } else {
+    initGoogleButton()
   }
   if (!document.getElementById('facebook-jssdk')) {
     window.fbAsyncInit = function () {
@@ -134,6 +150,13 @@ onMounted(() => {
 
 <style scoped>
 .sso-row { display:flex; flex-direction:column; gap:10px; margin-bottom:4px; }
+.sso-google-wrapper { position:relative; min-height:44px; }
+.sso-google-wrapper #g-signin-container { display:flex; justify-content:center; }
+.sso-overlay {
+  position:absolute; inset:0; pointer-events:none;
+  display:flex; align-items:center; justify-content:center;
+  background:white; border-radius:8px; opacity:.85;
+}
 .sso-btn {
   display:flex; align-items:center; justify-content:center; gap:10px;
   width:100%; padding:11px 16px; border-radius:8px;

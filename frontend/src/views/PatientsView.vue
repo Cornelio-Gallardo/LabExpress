@@ -62,10 +62,15 @@
     <!-- Patients table -->
     <div v-if="loading" class="loading">Loading patients...</div>
     <div v-else class="card">
+      <div v-if="selectedPatients.length" class="bulk-bar">
+        <span class="bulk-count">{{ selectedPatients.length }} selected</span>
+        <button class="btn btn-outline btn-sm" @click="selectedPatients = []">✕ Deselect</button>
+      </div>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
+              <th style="width:36px; text-align:center"><input type="checkbox" :checked="allPatientsSelected" @change="toggleSelectAllPatients" class="row-check" /></th>
               <th>Patient Name</th>
               <th>LIS ID</th>
               <th>PhilHealth No.</th>
@@ -82,6 +87,7 @@
             <template v-for="p in filtered" :key="p.id">
               <!-- Patient row -->
               <tr class="patient-row">
+                <td style="text-align:center"><input type="checkbox" :value="p.id" v-model="selectedPatients" class="row-check" /></td>
                 <td>
                   <div style="font-weight:600; color:var(--navy)">{{ p.name }}</div>
                 </td>
@@ -110,10 +116,10 @@
                 <td @click.stop style="text-align:right">
                   <div class="actions-cell" style="justify-content:flex-end">
                     <button class="action-btn view" title="View Results Popup" @click="openReport(p)">
-                      <svg width="15" height="15" viewBox="0 0 20 20" fill="currentColor"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/><path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/></svg>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                     </button>
                     <button v-if="auth.isAdmin" class="action-btn delete" title="Remove" @click="deactivate(p)">
-                      <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zm-2 6a1 1 0 012 0v5a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v5a1 1 0 11-2 0V8z" clip-rule="evenodd"/></svg>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
                     </button>
                   </div>
                 </td>
@@ -121,7 +127,7 @@
             </template>
 
             <tr v-if="filtered.length === 0">
-              <td :colspan="auth.isAdmin ? 10 : 9" style="text-align:center; padding:40px; color:var(--slate)">No patients found</td>
+              <td :colspan="auth.isAdmin ? 11 : 10" style="text-align:center; padding:40px; color:var(--slate)">No patients found</td>
             </tr>
           </tbody>
         </table>
@@ -200,6 +206,8 @@
 import { ref, computed, onMounted } from 'vue'
 import ResultReportModal from '../components/ResultReportModal.vue'
 import { useAuthStore } from '../store/auth'
+import { useDialog } from '../composables/useDialog'
+const dialog = useDialog()
 import { patientsApi } from '../services/api'
 import api from '../services/api'
 
@@ -222,6 +230,14 @@ const filtered = computed(() =>
       && (!statusFilter.value || p.resultStatus === statusFilter.value)
   })
 )
+
+const selectedPatients = ref([])
+const allPatientsSelected = computed(() =>
+  filtered.value.length > 0 && filtered.value.every(p => selectedPatients.value.includes(p.id))
+)
+function toggleSelectAllPatients(evt) {
+  selectedPatients.value = evt.target.checked ? filtered.value.map(p => p.id) : []
+}
 
 function formatAge(days) {
   if (days === 0) return 'Today'
@@ -268,7 +284,7 @@ async function create() {
 }
 
 async function deactivate(p) {
-  if (!confirm(`Deactivate ${p.name}?`)) return
+  if (!await dialog.confirm(`Deactivate ${p.name}?`, 'Deactivate Patient')) return
   await patientsApi.deactivate(p.id)
   await load()
 }
@@ -277,6 +293,9 @@ onMounted(load)
 </script>
 
 <style scoped>
+.bulk-bar { display:flex; align-items:center; gap:10px; padding:8px 16px; background:#fef9c3; border-bottom:1px solid #fde68a; font-size:13px; }
+.bulk-count { font-weight:600; color:#92400e; }
+.row-check { width:15px; height:15px; cursor:pointer; }
 /* Stat cards */
 .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
 .stat-card { background: white; border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; display: flex; align-items: center; gap: 14px; box-shadow: var(--shadow); }

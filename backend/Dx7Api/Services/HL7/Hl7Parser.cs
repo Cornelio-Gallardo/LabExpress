@@ -34,6 +34,7 @@ public static class Hl7Parser
                 case "PID": ParsePid(seg, msg); break;
                 case "OBR": ParseObr(seg, msg); break;
                 case "OBX": msg.Observations.Add(ParseObx(seg, line)); break;
+                case "NTE": ParseNte(seg, msg); break;
             }
         }
 
@@ -59,10 +60,19 @@ public static class Hl7Parser
         var name = GetField(seg, 5).Split('^');
         msg.PatientLastName  = name.Length > 0 ? name[0] : "";
         msg.PatientFirstName = name.Length > 1 ? name[1] : "";
-        msg.PatientName      = $"{msg.PatientLastName}, {msg.PatientFirstName}".Trim().TrimEnd(',').Trim();
+        var nameParts = new[] { msg.PatientLastName, msg.PatientFirstName }
+            .Where(s => !string.IsNullOrWhiteSpace(s));
+        msg.PatientName = string.Join(", ", nameParts);
 
         msg.PatientDob    = GetField(seg, 7);   // YYYYMMDD
         msg.PatientGender = GetField(seg, 8);   // M or F
+    }
+
+    private static void ParseNte(string[] seg, Hl7Message msg)
+    {
+        var text = GetField(seg, 3);
+        if (!string.IsNullOrWhiteSpace(text))
+            msg.Notes.Add(text);
     }
 
     private static void ParseObr(string[] seg, Hl7Message msg)
@@ -175,6 +185,9 @@ public class Hl7Message
 
     // Results (OBX segments - present in ORU^R01)
     public List<Hl7Observation> Observations { get; set; } = new();
+
+    // Lab notes (NTE segments)
+    public List<string> Notes { get; set; } = new();
 
     public bool IsOrder  => MessageType.StartsWith("ORM");
     public bool IsResult => MessageType.StartsWith("ORU");

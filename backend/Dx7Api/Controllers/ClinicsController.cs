@@ -107,4 +107,22 @@ public class ClinicsController : TenantBaseController
         await _db.SaveChangesAsync();
         return NoContent();
     }
+
+    // PATCH /api/clinics/{id}/branding — Clinic Admin or PL Admin updates clinic branding
+    [HttpPatch("{id}/branding")]
+    public async Task<IActionResult> UpdateBranding(Guid id, [FromBody] UpdateClinicBrandingRequest req)
+    {
+        // PL Admin can update any clinic; Clinic Admin can only update their own
+        if (!IsPlAdmin && !(IsClinicAdmin && ClientId == id)) return Forbid();
+
+        var client = await _db.Clients
+            .FirstOrDefaultAsync(c => c.Id == id && c.TenantId == TenantId);
+        if (client == null) return NotFound();
+
+        if (req.LogoUrl != null) client.LogoUrl = req.LogoUrl;
+        client.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
+        return Ok(new { client.Id, client.Name, client.LogoUrl, client.IsActive });
+    }
 }

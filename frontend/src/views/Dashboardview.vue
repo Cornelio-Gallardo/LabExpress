@@ -157,6 +157,8 @@ import { useAuthStore } from '../store/auth'
 import { sessionsApi, patientsApi } from '../services/api'
 import api from '../services/api'
 import { useRouter } from 'vue-router'
+import { useDialog } from '../composables/useDialog'
+const dialog = useDialog()
 
 const auth   = useAuthStore()
 const router = useRouter()
@@ -326,18 +328,18 @@ async function assignPatient(patient) {
     }
     const { data } = await sessionsApi.create(payload)
     if (data.duplicate) {
-      alert('Patient already assigned on this date.')
+      await dialog.alert('Patient already assigned on this date.', 'Already Assigned')
       return
     }
     if (data.session) {
       allSessions.value.push(data.session)
-      if (data.warning) alert(data.warning)
+      if (data.warning) await dialog.alert(data.warning, 'Warning')
     } else {
       // fallback: reload
       await loadSessions()
     }
   } catch (e) {
-    alert('Failed: ' + (e.response?.data?.message || e.message))
+    await dialog.alert('Failed: ' + (e.response?.data?.message || e.message), 'Error')
   } finally {
     addingId.value = null
   }
@@ -346,13 +348,13 @@ async function assignPatient(patient) {
 // ── Remove ────────────────────────────────────────────────────────────────────
 async function removePatient(patient) {
   const session = getSessionForPatient(patient)
-  if (!session || !confirm(`Remove ${patient.name} from ${session.shiftLabel || 'shift'}?`)) return
+  if (!session || !await dialog.confirm(`Remove ${patient.name} from ${session.shiftLabel || 'shift'}?`, 'Remove Patient')) return
   await sessionsApi.delete(session.id)
   allSessions.value = allSessions.value.filter(s => s.id !== session.id)
 }
 
 async function removeSession(session) {
-  if (!confirm(`Remove ${session.patientName} from ${session.shiftLabel || 'shift'}?`)) return
+  if (!await dialog.confirm(`Remove ${session.patientName} from ${session.shiftLabel || 'shift'}?`, 'Remove Patient')) return
   await sessionsApi.delete(session.id)
   allSessions.value = allSessions.value.filter(s => s.id !== session.id)
 }
@@ -371,10 +373,22 @@ async function saveChair(session) {
 }
 
 // ── Navigate ──────────────────────────────────────────────────────────────────
-function goToSession(session)     { router.push(`/session/${session.id}`) }
+function buildRoster() {
+  // Build ordered roster from all sessions in the current date range
+  const ordered = allSessions.value
+    .slice()
+    .sort((a, b) => (a.shiftNumber - b.shiftNumber) || a.patientName?.localeCompare(b.patientName ?? '') || 0)
+    .map(s => s.id)
+  return ordered.join(',')
+}
+
+function goToSession(session) {
+  const roster = buildRoster()
+  router.push({ name: 'Session', params: { sessionId: session.id }, query: roster ? { roster } : {} })
+}
 function goToPatientSession(p) {
   const s = getSessionForPatient(p)
-  if (s) router.push(`/session/${s.id}`)
+  if (s) goToSession(s)
 }
 
 onMounted(async () => {

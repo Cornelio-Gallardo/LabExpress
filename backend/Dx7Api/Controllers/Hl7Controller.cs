@@ -265,6 +265,30 @@ public class Hl7Controller : TenantBaseController
     }
 
     /// <summary>
+    /// Permanently delete a quarantined file by path.
+    /// Only PL Admin or Clinic Admin may delete quarantine files.
+    /// </summary>
+    [HttpDelete("quarantine")]
+    public IActionResult DeleteQuarantineFile([FromQuery] string path)
+    {
+        if (!IsPlAdmin && !IsClinicAdmin) return Forbid();
+        if (string.IsNullOrEmpty(path))
+            return BadRequest(new { message = "path is required" });
+
+        // Safety: path must be inside the configured inbox root
+        var inboxRoot = Path.GetFullPath(_config["Hl7:InboxPath"] ?? Path.Combine(AppContext.BaseDirectory, "HL7Inbox"));
+        var fullPath  = Path.GetFullPath(path);
+        if (!fullPath.StartsWith(inboxRoot))
+            return Forbid();
+
+        if (!System.IO.File.Exists(fullPath))
+            return NotFound(new { message = "File not found" });
+
+        System.IO.File.Delete(fullPath);
+        return NoContent();
+    }
+
+    /// <summary>
     /// Reprocess a quarantined file by path.
     /// For duplicates: moves to processed without re-saving results.
     /// For errors: re-runs through the processor.
@@ -330,6 +354,37 @@ public class Hl7Controller : TenantBaseController
         var fn     = Path.GetFileName(fullPath);
         var reason = fn.StartsWith("dup_") ? "duplicate" : "error";
 
+        // Look up the quarantine reason from the DB using MSH-10 MessageControlId
+        string? quarantineReason = null;
+        if (!string.IsNullOrEmpty(msg.MessageId))
+        {
+            var archived = await _db.Hl7Messages.IgnoreQueryFilters()
+                .FirstOrDefaultAsync(m => m.TenantId == TenantId && m.MessageControlId == msg.MessageId);
+            quarantineReason = archived?.QuarantineReason;
+        }
+
+        // Identify unmapped OBR-4 and OBX-3 codes by checking tenant maps
+        var unmappedTestCodes    = new List<string>();
+        var unmappedAnalyteCodes = new List<string>();
+
+        if (!string.IsNullOrEmpty(msg.TestCode))
+        {
+            var testMapped = await _db.TenantTestMaps.AnyAsync(m =>
+                m.TenantId == TenantId && m.TenantTestCode == msg.TestCode && m.IsActive);
+            if (!testMapped) unmappedTestCodes.Add(msg.TestCode);
+        }
+
+        foreach (var obs in msg.Observations)
+        {
+            var obxCode = !string.IsNullOrEmpty(obs.TestCode) ? obs.TestCode : msg.TestCode;
+            if (string.IsNullOrEmpty(obxCode)) continue;
+            var alreadyChecked = unmappedAnalyteCodes.Contains(obxCode);
+            if (alreadyChecked) continue;
+            var mapped = await _db.TenantAnalyteMaps.AnyAsync(m =>
+                m.TenantId == TenantId && m.TenantAnalyteCode == obxCode && m.IsActive);
+            if (!mapped) unmappedAnalyteCodes.Add(obxCode);
+        }
+
         var parsed = new
         {
             messageType      = msg.MessageType,
@@ -348,7 +403,15 @@ public class Hl7Controller : TenantBaseController
             }).ToList()
         };
 
-        return Ok(new { raw = display, parsed, reason, fileName = fn });
+        return Ok(new {
+            raw    = display,
+            parsed,
+            reason,
+            fileName          = fn,
+            quarantineReason,
+            unmappedTestCodes,
+            unmappedAnalyteCodes
+        });
     }
 
 
@@ -388,6 +451,37 @@ public class Hl7Controller : TenantBaseController
         var fn2      = Path.GetFileName(filePath);
         var folder   = Path.GetFileName(Path.GetDirectoryName(filePath)!);
 
+        // Look up the quarantine reason from the DB using MSH-10 MessageControlId
+        string? quarantineReason = null;
+        var unmappedTestCodes    = new List<string>();
+        var unmappedAnalyteCodes = new List<string>();
+
+        if (!string.IsNullOrEmpty(msg.MessageId))
+        {
+            var archived = await _db.Hl7Messages.IgnoreQueryFilters()
+                .FirstOrDefaultAsync(m => m.TenantId == TenantId && m.MessageControlId == msg.MessageId);
+            quarantineReason = archived?.QuarantineReason;
+        }
+
+        // Check unmapped OBR-4
+        if (!string.IsNullOrEmpty(msg.TestCode))
+        {
+            var testMapped = await _db.TenantTestMaps.AnyAsync(m =>
+                m.TenantId == TenantId && m.TenantTestCode == msg.TestCode && m.IsActive);
+            if (!testMapped) unmappedTestCodes.Add(msg.TestCode);
+        }
+
+        // Check unmapped OBX-3
+        foreach (var obs in msg.Observations)
+        {
+            var obxCode = !string.IsNullOrEmpty(obs.TestCode) ? obs.TestCode : msg.TestCode;
+            if (string.IsNullOrEmpty(obxCode)) continue;
+            if (unmappedAnalyteCodes.Contains(obxCode)) continue;
+            var mapped = await _db.TenantAnalyteMaps.AnyAsync(m =>
+                m.TenantId == TenantId && m.TenantAnalyteCode == obxCode && m.IsActive);
+            if (!mapped) unmappedAnalyteCodes.Add(obxCode);
+        }
+
         var parsed = new
         {
             messageType      = msg.MessageType,
@@ -409,7 +503,8 @@ public class Hl7Controller : TenantBaseController
             }).ToList()
         };
 
-        return Ok(new { raw = display, parsed, folder, fileName = fn2, originalName = baseName });
+        return Ok(new { raw = display, parsed, folder, fileName = fn2, originalName = baseName,
+            quarantineReason, unmappedTestCodes, unmappedAnalyteCodes });
     }
 
 

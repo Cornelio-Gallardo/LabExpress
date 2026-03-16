@@ -2,6 +2,7 @@ namespace Dx7Api.DTOs;
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 public record LoginRequest(string Email, string Password);
+public record ExternalLoginRequest(string Provider, string Token);
 
 public record LoginResponse(
     string Token,
@@ -158,6 +159,26 @@ public record UpdateClinicRequest(string? Name, string? Code, string? Address, s
 public record CreateRoleRequest(string RoleKey, string Label, string Description, int SortOrder);
 public record UpdateRoleRequest(string? Label, string? Description, int? SortOrder, bool? IsActive);
 
+// ── Tenant / Branding ─────────────────────────────────────────────────────────
+public record TenantDetailDto(Guid Id, string Name, string Code, string PrimaryColor, string? LogoUrl, string? FooterText, bool IsActive);
+public record UpdateTenantBrandingRequest(string? PrimaryColor, string? LogoUrl, string? FooterText);
+public record UpdateClinicBrandingRequest(string? LogoUrl, string? PrimaryColor);
+
+// ── Code Mappings ─────────────────────────────────────────────────────────────
+public record SxaTestDto(string SxaTestId, string CanonicalName, string Category);
+public record SxaAnalyteDto(string AnalyteCode, string DisplayName, string? DefaultUnit);
+public record TestMapDto(Guid Id, string TenantTestCode, string SxaTestId, string CanonicalName, bool IsActive);
+public record AnalyteMapDto(Guid Id, string TenantAnalyteCode, string AnalyteCode, string DisplayName, bool IsActive);
+public record CreateTestMapRequest(string TenantTestCode, string SxaTestId);
+public record CreateAnalyteMapRequest(string TenantAnalyteCode, string AnalyteCode);
+
+// ── Longitudinal ─────────────────────────────────────────────────────────────
+public record LongitudinalValueDto(string Date, string? Accession, string DisplayValue, string? AbnormalFlag, Guid ResultHeaderId);
+public record LongitudinalRowDto(string AnalyteCode, string AnalyteName, string? Unit, string? ReferenceRange, List<LongitudinalValueDto> Values);
+
+// ── Audit Defense ─────────────────────────────────────────────────────────────
+public record UrRDto(string PatientName, string? LisPatientId, string Date, string? AccessionPre, string? AccessionPost, decimal? BunPre, decimal? BunPost, decimal? Urr, decimal? KtV);
+
 public record ForgotPasswordRequest(string Email);
 public record ResetPasswordRequest(string Email, string Token, string NewPassword);
 
@@ -197,3 +218,6 @@ public record BulkShiftRequest(
 );
 
 public record BulkShiftItem(int ShiftNumber, string ShiftLabel, string StartTime, string EndTime);
+
+// ── Export ────────────────────────────────────────────────────────────────────
+public record ShiftPdfRequest(List<Guid> SessionIds);

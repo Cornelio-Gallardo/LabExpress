@@ -178,6 +178,49 @@ public class ResultsController : TenantBaseController
         return Ok(result);
     }
 
+    // ── GET /api/results/longitudinal/{patientId}?months=6 ───────────────────
+    // 6-month continuous lab review — one row per analyte, values as date columns.
+    [HttpGet("longitudinal/{patientId}")]
+    public async Task<IActionResult> GetLongitudinal(Guid patientId, [FromQuery] int months = 6)
+    {
+        months = Math.Clamp(months, 1, 24);
+        if (!await PatientBelongsToTenant(patientId)) return NotFound();
+
+        var cutoff = DateTime.UtcNow.AddMonths(-months);
+        var values = await LoadCdmValues(patientId);
+        var filtered = values.Where(v =>
+            (v.ResultHeader.ResultDatetime ?? DateTime.MinValue) >= cutoff).ToList();
+
+        if (filtered.Count == 0) return Ok(new List<object>());
+
+        var rows = filtered
+            .GroupBy(v => v.AnalyteCode ?? v.Id.ToString())
+            .Select(g =>
+            {
+                var sample = g.OrderByDescending(v => v.ResultHeader.ResultDatetime).First();
+                var vals = g
+                    .OrderBy(v => v.ResultHeader.ResultDatetime)
+                    .Select(v => new LongitudinalValueDto(
+                        Date:            (v.ResultHeader.ResultDatetime ?? DateTime.UtcNow).ToString("yyyy-MM-dd"),
+                        Accession:       v.ResultHeader.Order?.AccessionNumber,
+                        DisplayValue:    v.DisplayValue,
+                        AbnormalFlag:    v.AbnormalFlag,
+                        ResultHeaderId:  v.ResultHeaderId
+                    )).ToList();
+                return new LongitudinalRowDto(
+                    AnalyteCode:    sample.AnalyteCode ?? "",
+                    AnalyteName:    sample.Analyte?.DisplayName ?? sample.AnalyteCode ?? "",
+                    Unit:           sample.Unit ?? sample.Analyte?.DefaultUnit,
+                    ReferenceRange: sample.ReferenceRangeRaw,
+                    Values:         vals
+                );
+            })
+            .OrderBy(r => r.AnalyteName)
+            .ToList();
+
+        return Ok(rows);
+    }
+
     // ── POST /api/results — manual entry (admin/sysad only) ───────────────────
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateResultRequest req)

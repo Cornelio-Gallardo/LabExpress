@@ -9,6 +9,33 @@
         </div>
       </div>
 
+      <!-- Global quick search -->
+      <div class="global-search-wrap" v-if="auth.isLoggedIn">
+        <input
+          v-model="searchQuery"
+          class="global-search-input"
+          placeholder="🔍 Search patients…"
+          autocomplete="off"
+          @input="onSearchInput"
+          @keydown.escape="closeSearch"
+          @blur="onSearchBlur"
+        />
+        <div v-if="searchResults.length" class="search-dropdown">
+          <div
+            v-for="p in searchResults"
+            :key="p.id"
+            class="search-result-item"
+            @mousedown.prevent="goToPatient(p)"
+          >
+            <div class="sr-name">{{ p.name }}</div>
+            <div class="sr-meta">{{ p.lisPatientId || '' }}</div>
+          </div>
+        </div>
+        <div v-else-if="searchQuery.length >= 2 && !searching" class="search-dropdown">
+          <div class="search-no-results">No patients found</div>
+        </div>
+      </div>
+
       <div class="app-header-right">
         <div class="app-header-user">
           <div class="user-info">
@@ -71,6 +98,12 @@
             </span>
             HL7 Inbox
           </router-link>
+          <router-link to="/settings" class="nav-item" active-class="active">
+            <span class="nav-icon">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
+            </span>
+            Settings
+          </router-link>
         </template>
       </nav>
 
@@ -91,6 +124,9 @@
   </div>
 
   <router-view v-else />
+
+  <!-- Global custom dialog — mounted once, used everywhere -->
+  <AppDialog />
 </template>
 
 <script setup>
@@ -98,6 +134,8 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from './store/auth'
 import api from './services/api'
+import { patientsApi } from './services/api'
+import AppDialog from './components/AppDialog.vue'
 
 const auth   = useAuthStore()
 const router = useRouter()
@@ -106,6 +144,40 @@ function logout() {
   auth.logout()
   router.push('/login')
 }
+
+// ── Global quick search ──────────────────────────────────────────────────────
+const searchQuery   = ref('')
+const searchResults = ref([])
+const searching     = ref(false)
+let searchTimer     = null
+
+async function onSearchInput() {
+  clearTimeout(searchTimer)
+  if (searchQuery.value.length < 2) { searchResults.value = []; return }
+  searching.value = true
+  searchTimer = setTimeout(async () => {
+    try {
+      const { data } = await patientsApi.getAll({ search: searchQuery.value, limit: 8 })
+      searchResults.value = Array.isArray(data) ? data.slice(0, 8) : (data.patients ?? []).slice(0, 8)
+    } catch { searchResults.value = [] }
+    finally { searching.value = false }
+  }, 300)
+}
+
+function closeSearch() {
+  searchQuery.value = ''
+  searchResults.value = []
+}
+
+function onSearchBlur() {
+  setTimeout(closeSearch, 150)
+}
+
+function goToPatient(p) {
+  closeSearch()
+  router.push(`/patients?highlight=${p.id}`)
+}
+
 
 // ── Header avatar ──
 const headerAvatarUrl = ref(null)
@@ -155,4 +227,16 @@ watch(() => auth.isLoggedIn, (loggedIn) => {
 
 <style scoped>
 .app-sidebar { position: relative; min-height: calc(100vh - 60px); }
+
+/* Global search */
+.global-search-wrap  { position: relative; flex: 1; max-width: 360px; margin: 0 16px; }
+.global-search-input { width: 100%; height: 36px; padding: 0 12px; border: 1.5px solid rgba(255,255,255,0.2); border-radius: 20px; background: rgba(255,255,255,0.12); color: white; font-size: 13px; outline: none; }
+.global-search-input::placeholder { color: rgba(255,255,255,0.5); }
+.global-search-input:focus { border-color: rgba(255,255,255,0.5); background: rgba(255,255,255,0.18); }
+.search-dropdown     { position: absolute; top: calc(100% + 6px); left: 0; right: 0; background: white; border: 1.5px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); z-index: 9999; overflow: hidden; }
+.search-result-item  { padding: 10px 14px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+.search-result-item:hover { background: #f0f9ff; }
+.sr-name             { font-size: 13px; font-weight: 600; color: var(--navy); }
+.sr-meta             { font-size: 11px; color: var(--slate); font-family: monospace; }
+.search-no-results   { padding: 12px 14px; font-size: 13px; color: var(--slate); text-align: center; }
 </style>

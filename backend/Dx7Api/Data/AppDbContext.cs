@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Dx7Api.Models;
+using Dx7Api.Services;
 
 namespace Dx7Api.Data;
 
@@ -38,8 +40,67 @@ public class AppDbContext : DbContext
     // ── Flat Result table (manual / seeded data backward compat) ─────────────
     public DbSet<Result>          Results          => Set<Result>();
 
-    // Set from middleware for global query filters
+    // ── Audit & Lab Notes ──────────────────────────────────────────────────────
+    public DbSet<AuditLog>        AuditLogs        => Set<AuditLog>();
+    public DbSet<LabNote>         LabNotes         => Set<LabNote>();
+
+    // Set from middleware for global query filters and audit
     public Guid? CurrentTenantId { get; set; }
+    public Guid? CurrentUserId   { get; set; }
+
+    // Appendix B §4 — automatically audit every write via ChangeTracker
+    private static readonly HashSet<Type> AuditedTypes = new()
+    {
+        typeof(User), typeof(Patient), typeof(Session), typeof(MdNote),
+        typeof(LabOrder), typeof(ResultHeader), typeof(ResultValue),
+        typeof(ShiftSchedule), typeof(ShiftNurseAssignment), typeof(RoleDefinition)
+    };
+
+    public override async Task<int> SaveChangesAsync(CancellationToken ct = default)
+    {
+        if (CurrentTenantId.HasValue)
+        {
+            var entries = ChangeTracker.Entries()
+                .Where(e => AuditedTypes.Contains(e.Entity.GetType())
+                         && e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+                .ToList();
+
+            foreach (var entry in entries)
+            {
+                var action = entry.State switch
+                {
+                    EntityState.Added    => "CREATE",
+                    EntityState.Deleted  => "DELETE",
+                    _                    => "UPDATE"
+                };
+
+                // Check for activation/deactivation
+                if (entry.State == EntityState.Modified
+                    && entry.Properties.Any(p => p.Metadata.Name == "IsActive" && p.IsModified))
+                {
+                    var isActive = (bool?)entry.CurrentValues["IsActive"];
+                    action = isActive == true ? "ACTIVATE" : "DEACTIVATE";
+                }
+
+                // Try to get EntityId
+                Guid? entityId = null;
+                var idProp = entry.Properties.FirstOrDefault(p => p.Metadata.Name == "Id");
+                if (idProp?.CurrentValue is Guid gid) entityId = gid;
+
+                AuditLogs.Add(new AuditLog
+                {
+                    TenantId  = CurrentTenantId.Value,
+                    UserId    = CurrentUserId,
+                    Action    = action,
+                    Entity    = entry.Entity.GetType().Name,
+                    EntityId  = entityId,
+                    Timestamp = DateTime.UtcNow
+                });
+            }
+        }
+
+        return await base.SaveChangesAsync(ct);
+    }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -67,6 +128,8 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<ShiftSchedule>()   .HasQueryFilter(e => CurrentTenantId == null || e.TenantId == CurrentTenantId);
         modelBuilder.Entity<ShiftNurseAssignment>().HasQueryFilter(e => CurrentTenantId == null || e.TenantId == CurrentTenantId);
         modelBuilder.Entity<Result>()          .HasQueryFilter(e => CurrentTenantId == null || e.TenantId == CurrentTenantId);
+        modelBuilder.Entity<AuditLog>()        .HasQueryFilter(e => CurrentTenantId == null || e.TenantId == CurrentTenantId);
+        modelBuilder.Entity<LabNote>()         .HasQueryFilter(e => CurrentTenantId == null || e.TenantId == CurrentTenantId);
 
         // ── Unique indexes ────────────────────────────────────────────────────
         // §2.1 — prevents HL7 retransmission duplicates
@@ -97,6 +160,17 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Result>()
             .HasIndex(r => new { r.TenantId, r.PatientId, r.TestCode, r.ResultDate });
 
+        // AuditLog — query by entity
+        modelBuilder.Entity<AuditLog>()
+            .HasIndex(a => new { a.TenantId, a.Entity, a.EntityId });
+
+        // LabNote → ResultHeader FK (cascade)
+        modelBuilder.Entity<LabNote>()
+            .HasOne(n => n.ResultHeader)
+            .WithMany()
+            .HasForeignKey(n => n.ResultHeaderId)
+            .OnDelete(DeleteBehavior.Cascade);
+
         // ── Enum → string conversions ─────────────────────────────────────────
         modelBuilder.Entity<User>()
             .Property(u => u.Role)
@@ -109,6 +183,17 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<SxaAnalyte>()
             .Property(a => a.ResultType)
             .HasConversion<string>();
+
+        // ── CDM §2.1 — raw_payload encrypted at rest (AES-256-GCM) ──────────
+        if (Hl7Crypto.IsConfigured)
+        {
+            var hl7Converter = new ValueConverter<string, string>(
+                v => Hl7Crypto.Encrypt(v),
+                v => Hl7Crypto.Decrypt(v));
+            modelBuilder.Entity<Hl7Message>()
+                .Property(m => m.RawPayload)
+                .HasConversion(hl7Converter);
+        }
 
         // ── String PKs — no auto-generate ────────────────────────────────────
         modelBuilder.Entity<SxaTestCatalog>()

@@ -24,9 +24,13 @@ public class TenantMiddleware
                     var jwt = handler.ReadJwtToken(token);
                     var tenantClaim = jwt.Claims.FirstOrDefault(c => c.Type == "tenant_id");
                     if (tenantClaim != null && Guid.TryParse(tenantClaim.Value, out var tenantId))
-                    {
                         db.CurrentTenantId = tenantId;
-                    }
+
+                    var subClaim = jwt.Claims.FirstOrDefault(c =>
+                        c.Type == System.Security.Claims.ClaimTypes.NameIdentifier ||
+                        c.Type == "sub" || c.Type == "nameid");
+                    if (subClaim != null && Guid.TryParse(subClaim.Value, out var userId))
+                        db.CurrentUserId = userId;
                 }
             }
             catch

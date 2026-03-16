@@ -147,7 +147,15 @@ public class UsersController : TenantBaseController
             user.ClientId = req.ClientId;
 
         user.UpdatedAt = DateTime.UtcNow;
-        await _db.SaveChangesAsync();
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            var msg = ex.InnerException?.Message ?? ex.Message;
+            return StatusCode(500, new { message = msg });
+        }
         return NoContent();
     }
 

@@ -72,11 +72,29 @@
         <div class="empty-title">No quarantined files</div>
       </div>
       <div v-else class="table-card">
+        <!-- Bulk action bar -->
+        <div v-if="selectedQuarantine.length" class="bulk-bar">
+          <span class="bulk-count">{{ selectedQuarantine.length }} selected</span>
+          <button class="btn btn-sm btn-danger" :disabled="bulkDeletingQuarantine" @click="deleteSelectedQuarantine">
+            {{ bulkDeletingQuarantine ? 'Deleting…' : '🗑 Delete Selected' }}
+          </button>
+          <button class="btn btn-outline btn-sm" @click="selectedQuarantine = []">✕ Deselect</button>
+        </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>File</th><th>Reason</th><th>Size</th><th>Date</th><th style="text-align:center">Actions</th></tr></thead>
+            <thead>
+              <tr>
+                <th style="width:36px; text-align:center">
+                  <input type="checkbox" :checked="allQuarantineSelected" @change="toggleSelectAllQuarantine" class="row-check" />
+                </th>
+                <th>File</th><th>Reason</th><th>Size</th><th>Date</th><th style="text-align:center">Actions</th>
+              </tr>
+            </thead>
             <tbody>
               <tr v-for="f in quarantineFiles" :key="f.path" :class="{ 'row-reviewing': reviewFile?.path === f.path }">
+                <td style="text-align:center">
+                  <input type="checkbox" :value="f.path" v-model="selectedQuarantine" class="row-check" />
+                </td>
                 <td class="text-sm" style="font-family:monospace; max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ f.fileName }}</td>
                 <td>
                   <span class="status-pill" :class="f.reason === 'duplicate' ? 'pill-warning' : 'pill-error'">
@@ -87,13 +105,15 @@
                 <td class="text-sm text-slate" style="white-space:nowrap">{{ new Date(f.modified).toLocaleString() }}</td>
                 <td style="text-align:center">
                   <div class="flex gap-2" style="justify-content:center">
-                    <button class="btn btn-sm btn-outline" @click="openReview(f)">👁 Review</button>
-                    <button class="btn btn-sm"
-                      :class="f.reason === 'duplicate' ? 'btn-outline' : 'btn-primary'"
-                      :disabled="reprocessingPath===f.path" @click="reprocess(f)">
-                      <span v-if="reprocessingPath===f.path">Processing…</span>
-                      <span v-else-if="f.reason === 'duplicate'">✓ Acknowledge</span>
-                      <span v-else>↺ Reprocess</span>
+                    <button class="action-btn view" title="Review" @click="openReview(f)">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </button>
+                    <button class="action-btn reprocess" :title="f.reason === 'duplicate' ? 'Acknowledge' : 'Reprocess'" :disabled="reprocessingPath===f.path" @click="reprocess(f)">
+                      <svg v-if="f.reason === 'duplicate'" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                      <svg v-else width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.12"/></svg>
+                    </button>
+                    <button class="action-btn delete" title="Delete" :disabled="deletingPath===f.path" @click="deleteQuarantine(f)">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
                     </button>
                   </div>
                 </td>
@@ -124,6 +144,41 @@
           </div>
 
           <div v-else-if="reviewData" class="review-body">
+            <!-- Error banner -->
+            <div v-if="reviewFile.reason === 'error'" class="error-banner">
+              <div class="error-banner-icon">⚠</div>
+              <div style="flex:1">
+                <div class="error-banner-title">Processing Error</div>
+                <div class="error-banner-msg">{{ reviewData.quarantineReason || 'This file failed to process and was moved to quarantine. Review the parsed fields and raw content below, fix any mapping issues, then reprocess.' }}</div>
+                <div v-if="reviewData.unmappedTestCodes?.length" class="mapping-issue">
+                  <div class="mapping-issue-label">
+                    Unmapped OBR-4 test code(s):
+                    <span v-for="c in reviewData.unmappedTestCodes" :key="c" class="code-chip">{{ c }}</span>
+                  </div>
+                  <div class="mapping-issue-hint">
+                    Add a mapping in
+                    <router-link to="/settings" @click="closeReview">Settings → HL7 Code Mappings → Test Mappings (OBR-4)</router-link>
+                  </div>
+                </div>
+                <div v-if="reviewData.unmappedAnalyteCodes?.length" class="mapping-issue">
+                  <div class="mapping-issue-label">
+                    Unmapped OBX-3 analyte code(s):
+                    <span v-for="c in reviewData.unmappedAnalyteCodes" :key="c" class="code-chip">{{ c }}</span>
+                  </div>
+                  <div class="mapping-issue-hint">
+                    Add mapping(s) in
+                    <router-link to="/settings" @click="closeReview">Settings → HL7 Code Mappings → Analyte Mappings (OBX-3)</router-link>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-else-if="reviewFile.reason === 'duplicate'" class="dupe-banner">
+              <div class="error-banner-icon">⚡</div>
+              <div>
+                <div class="error-banner-title">Duplicate Message</div>
+                <div class="error-banner-msg">MSH-10 message control ID already exists in the database. If this file was re-sent in error, click Acknowledge to mark it as reviewed.</div>
+              </div>
+            </div>
             <div class="review-section-title">Parsed Fields</div>
             <div class="review-fields">
               <div class="review-field"><span class="rf-label">Message Type</span><span class="rf-value">{{ reviewData.parsed.messageType || '—' }}</span></div>
@@ -204,6 +259,48 @@
           </div>
 
           <div v-else class="review-body">
+            <!-- Error banner -->
+            <div v-if="logReview.status === 'error'" class="error-banner">
+              <div class="error-banner-icon">⚠</div>
+              <div style="flex:1">
+                <div class="error-banner-title">Processing Error</div>
+                <div class="error-banner-msg">
+                  {{ logReviewData?.quarantineReason || logReview.notes || 'An error occurred while processing this HL7 message.' }}
+                </div>
+                <div v-if="logReviewData?.unmappedTestCodes?.length" class="mapping-issue">
+                  <div class="mapping-issue-label">
+                    Unmapped OBR-4 test code(s):
+                    <span v-for="c in logReviewData.unmappedTestCodes" :key="c" class="code-chip">{{ c }}</span>
+                  </div>
+                  <div class="mapping-issue-hint">
+                    Add a mapping in
+                    <router-link to="/settings" @click="logReview=null">Settings → HL7 Code Mappings → Test Mappings (OBR-4)</router-link>
+                  </div>
+                </div>
+                <div v-if="logReviewData?.unmappedAnalyteCodes?.length" class="mapping-issue">
+                  <div class="mapping-issue-label">
+                    Unmapped OBX-3 analyte code(s):
+                    <span v-for="c in logReviewData.unmappedAnalyteCodes" :key="c" class="code-chip">{{ c }}</span>
+                  </div>
+                  <div class="mapping-issue-hint">
+                    Add mapping(s) in
+                    <router-link to="/settings" @click="logReview=null">Settings → HL7 Code Mappings → Analyte Mappings (OBX-3)</router-link>
+                  </div>
+                </div>
+                <div v-if="!logReviewData && logReview.notes?.includes('unmapped')" class="mapping-issue">
+                  <div class="mapping-issue-hint" style="margin-top:6px">
+                    Go to <router-link to="/settings" @click="logReview=null">Settings → HL7 Code Mappings</router-link> to add the missing mappings, then reprocess from the 🔴 Quarantine panel.
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-else-if="logReview.status === 'duplicate'" class="dupe-banner">
+              <div class="error-banner-icon">⚡</div>
+              <div>
+                <div class="error-banner-title">Duplicate Message</div>
+                <div class="error-banner-msg">MSH-10 message control ID already exists. This message was not re-processed.</div>
+              </div>
+            </div>
             <div class="review-section-title">Log Summary</div>
             <div class="review-fields">
               <div class="review-field"><span class="rf-label">Timestamp</span><span class="rf-value mono">{{ logReview.timestamp || '—' }}</span></div>
@@ -265,12 +362,15 @@
             </template>
 
             <template v-else>
-              <div style="margin-top:16px; padding:12px 16px; background:var(--bg-page); border:1px solid var(--border); border-radius:8px">
-                <span class="text-slate text-sm">📁 Archived file not found — log summary only.</span>
+              <div style="margin-top:16px; padding:12px 16px; background:var(--bg-page); border:1px solid var(--border); border-radius:8px; display:flex; align-items:flex-start; gap:10px">
+                <span style="font-size:16px; flex-shrink:0">📁</span>
+                <div>
+                  <div class="text-slate text-sm" style="font-weight:600">Archived file not found — log summary only.</div>
+                  <div v-if="logReview.status === 'error' || logReview.status === 'duplicate'" class="text-slate text-sm" style="margin-top:4px">
+                    Open the 🔴 Quarantine panel to view and reprocess the original file.
+                  </div>
+                </div>
               </div>
-              <p v-if="logReview.status === 'error' || logReview.status === 'duplicate'" class="text-slate text-sm" style="margin:12px 0 0">
-                Open the 🔴 Quarantine panel to view and reprocess the original file.
-              </p>
             </template>
           </div>
 
@@ -323,6 +423,7 @@
             <table>
             <thead>
               <tr>
+                <th style="width:36px; text-align:center"><input type="checkbox" :checked="allPageSelected" @change="toggleSelectAll" class="row-check" /></th>
                 <th>Time</th>
                 <th>Status</th>
                 <th>Msg Type</th>
@@ -331,11 +432,12 @@
                 <th>Saved</th>
                 <th>File</th>
                 <th>Notes</th>
-                <th style="width:36px; text-align:center"><input type="checkbox" :checked="allPageSelected" @change="toggleSelectAll" class="row-check" /></th>
+                <th style="text-align:center">Actions</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(e, i) in pagedLog" :key="e._idx" class="log-row-clickable" @click.self="openLogReview(e)" style="cursor:pointer">
+              <tr v-for="e in pagedLog" :key="e._idx" class="log-row-clickable" @click.self="openLogReview(e)" style="cursor:pointer">
+                <td style="text-align:center"><input type="checkbox" :value="e._idx" v-model="selected" class="row-check" /></td>
                 <td class="text-sm" style="white-space:nowrap; font-family:monospace">{{ e.timestamp }}</td>
                 <td>
                   <span class="status-pill" :class="pillClass(e.status)">{{ e.status }}</span>
@@ -351,7 +453,16 @@
                 </td>
                 <td class="text-sm text-slate" style="max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ e.file }}</td>
                 <td class="text-sm text-slate" style="max-width:240px">{{ e.notes }}</td>
-                <td style="text-align:center"><input type="checkbox" :value="e._idx" v-model="selected" class="row-check" /></td>
+                <td style="text-align:center">
+                  <div class="flex gap-2" style="justify-content:center">
+                    <button class="action-btn view" title="Review" @click.stop="openLogReview(e)">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </button>
+                    <button class="action-btn delete" title="Delete" @click.stop="deleteLogEntry(e)">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                    </button>
+                  </div>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -387,6 +498,8 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import api from '../services/api'
 import { useAuthStore } from '../store/auth'
+import { useDialog } from '../composables/useDialog'
+const dialog = useDialog()
 const auth = useAuthStore()
 
 const loading    = ref(false)
@@ -402,7 +515,10 @@ let autoRefresh  = null
 const showQuarantine   = ref(false)
 const quarantineFiles  = ref([])
 const reprocessingPath = ref(null)
-const reviewFile       = ref(null)
+const deletingPath     = ref(null)
+const selectedQuarantine     = ref([])
+const bulkDeletingQuarantine = ref(false)
+const reviewFile             = ref(null)
 const reviewData       = ref(null)
 const reviewLoading    = ref(false)
 const logReview        = ref(null)
@@ -497,8 +613,7 @@ function toggleSelectAll(evt) {
 
 async function deleteSelected() {
   if (!selected.value.length) return
-  if (!confirm(`Delete ${selected.value.length} selected entries?`)) return
-  // Delete in descending index order so indices stay valid
+  if (!await dialog.confirm(`Delete ${selected.value.length} selected entries?`, 'Delete Entries')) return
   const sorted = [...selected.value].sort((a, b) => b - a)
   try {
     for (const idx of sorted) {
@@ -506,15 +621,24 @@ async function deleteSelected() {
       logEntries.value.splice(idx, 1)
     }
     selected.value = []
-  } catch (e) { alert('Failed: ' + (e.response?.data?.message || e.message)) }
+  } catch (e) { await dialog.alert('Failed: ' + (e.response?.data?.message || e.message), 'Error') }
+}
+
+async function deleteLogEntry(entry) {
+  if (!await dialog.confirm('Delete this log entry?', 'Delete Entry')) return
+  try {
+    await api.delete('/hl7/log/' + entry._idx)
+    logEntries.value.splice(entry._idx, 1)
+    selected.value = selected.value.filter(i => i !== entry._idx)
+  } catch (e) { await dialog.alert('Failed: ' + (e.response?.data?.message || e.message), 'Error') }
 }
 
 async function clearLog() {
-  if (!confirm('Clear all log entries? This cannot be undone.')) return
+  if (!await dialog.confirm('Clear all log entries? This cannot be undone.', 'Clear Log')) return
   try {
     await api.delete('/hl7/log')
     logEntries.value = []
-  } catch (e) { alert('Failed: ' + (e.response?.data?.message || e.message)) }
+  } catch (e) { await dialog.alert('Failed: ' + (e.response?.data?.message || e.message), 'Error') }
 }
 
 async function loadQuarantine() {
@@ -532,10 +656,10 @@ async function reprocess(file) {
       quarantineFiles.value = quarantineFiles.value.filter(f => f.path !== file.path)
       await load()
     } else {
-      alert('Reprocess failed: ' + (data.notes || 'Unknown error'))
+      await dialog.alert('Reprocess failed: ' + (data.notes || 'Unknown error'), 'Reprocess Failed')
     }
   } catch (e) {
-    alert('Failed: ' + (e.response?.data?.message || e.message))
+    await dialog.alert('Failed: ' + (e.response?.data?.message || e.message), 'Error')
   } finally {
     reprocessingPath.value = null
   }
@@ -549,7 +673,7 @@ async function openReview(file) {
     const { data } = await api.get('/hl7/quarantine/read', { params: { path: file.path } })
     reviewData.value = data
   } catch (e) {
-    alert('Could not load file: ' + (e.response?.data?.message || e.message))
+    await dialog.alert('Could not load file: ' + (e.response?.data?.message || e.message), 'Error')
     reviewFile.value = null
   } finally {
     reviewLoading.value = false
@@ -581,6 +705,48 @@ async function reprocessFromReview() {
   const file = reviewFile.value
   await reprocess(file)
   closeReview()
+}
+
+
+async function deleteQuarantine(file) {
+  if (!await dialog.confirm(`Permanently delete "${file.fileName}"? This cannot be undone.`, 'Delete File')) return
+  deletingPath.value = file.path
+  try {
+    await api.delete('/hl7/quarantine', { params: { path: file.path } })
+    quarantineFiles.value = quarantineFiles.value.filter(f => f.path !== file.path)
+    selectedQuarantine.value = selectedQuarantine.value.filter(p => p !== file.path)
+  } catch (e) {
+    await dialog.alert('Delete failed: ' + (e.response?.data?.message || e.message), 'Error')
+  } finally {
+    deletingPath.value = null
+  }
+}
+
+const allQuarantineSelected = computed(() =>
+  quarantineFiles.value.length > 0 &&
+  quarantineFiles.value.every(f => selectedQuarantine.value.includes(f.path))
+)
+
+function toggleSelectAllQuarantine(evt) {
+  if (evt.target.checked)
+    selectedQuarantine.value = quarantineFiles.value.map(f => f.path)
+  else
+    selectedQuarantine.value = []
+}
+
+async function deleteSelectedQuarantine() {
+  if (!selectedQuarantine.value.length) return
+  if (!await dialog.confirm(`Permanently delete ${selectedQuarantine.value.length} quarantined file(s)? This cannot be undone.`, 'Delete Files')) return
+  bulkDeletingQuarantine.value = true
+  try {
+    for (const path of selectedQuarantine.value) {
+      try { await api.delete('/hl7/quarantine', { params: { path } }) } catch { /* continue on individual failure */ }
+    }
+    quarantineFiles.value = quarantineFiles.value.filter(f => !selectedQuarantine.value.includes(f.path))
+    selectedQuarantine.value = []
+  } finally {
+    bulkDeletingQuarantine.value = false
+  }
 }
 
 onMounted(() => {
@@ -686,4 +852,23 @@ onUnmounted(() => clearInterval(autoRefresh))
   margin: 0;
 }
 .log-row-clickable:hover td { background: var(--primary-light) !important; }
+.btn-danger { background: #dc2626; color: white; border: none; }
+.btn-danger:hover:not(:disabled) { background: #b91c1c; }
+.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Error / dupe banners in review panel */
+.error-banner  { display:flex; gap:12px; align-items:flex-start; background:#fef2f2; border:1.5px solid #fca5a5; border-radius:8px; padding:12px 16px; margin-bottom:18px; }
+.dupe-banner   { display:flex; gap:12px; align-items:flex-start; background:#fefce8; border:1.5px solid #fde047; border-radius:8px; padding:12px 16px; margin-bottom:18px; }
+.error-banner-icon  { font-size:20px; line-height:1; flex-shrink:0; }
+.error-banner-title { font-size:13px; font-weight:700; color:#991b1b; margin-bottom:3px; }
+.dupe-banner .error-banner-title { color:#854d0e; }
+.error-banner-msg   { font-size:12px; color:#7f1d1d; line-height:1.5; }
+.dupe-banner .error-banner-msg  { color:#713f12; }
+
+/* Mapping issue blocks inside error banner */
+.mapping-issue { margin-top:10px; }
+.mapping-issue-label { font-size:12px; font-weight:600; color:#991b1b; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.mapping-issue-hint  { font-size:11px; color:#7f1d1d; margin-top:3px; }
+.mapping-issue-hint a { color:#0d7377; font-weight:600; text-decoration:underline; }
+.code-chip { display:inline-block; background:#fee2e2; border:1px solid #fca5a5; color:#991b1b; font-family:monospace; font-size:11px; font-weight:700; padding:1px 7px; border-radius:4px; }
 </style>

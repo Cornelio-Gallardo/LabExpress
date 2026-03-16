@@ -133,20 +133,20 @@ public class Hl7Processor
                     return result;
                 }
 
-                // ── Step 3: Map OBR-4 → SXA_Test (CDM §6.1) ────────────────
-                // If OBR-4 unmapped, fall back to SXA_TEST_MULTI (multi-panel)
-                // rather than quarantining — real HCLab files send all analytes
-                // under one OBR regardless of panel type.
+                // ── Step 3: Map OBR-4 → SXA_Test (CDM §6.1 / §6.3) ─────────
+                // CDM §6.3: OBR-4 cannot resolve → quarantine whole message.
+                // Do NOT create ResultHeader. No fallback. No auto-guessing.
                 var testMap = await ResolveTestMap(msg.TestCode, tenantId);
                 if (testMap == null)
                 {
-                    testMap = await _db.TenantTestMaps
-                        .Include(m => m.SxaTest)
-                        .FirstOrDefaultAsync(m => m.TenantId == tenantId && m.TenantTestCode == "MULTI" && m.IsActive);
+                    hl7Archive.QuarantineFlag   = true;
+                    hl7Archive.QuarantineReason = $"OBR-4 '{msg.TestCode}' unmapped — no TenantTestMap entry. Add mapping before reprocessing.";
+                    await _db.SaveChangesAsync();
+                    result.Status = "quarantined";
+                    result.Notes  = hl7Archive.QuarantineReason;
+                    _logger.LogWarning("HL7 {MsgId}: OBR-4 '{Code}' unmapped — message quarantined per CDM §6.3", msg.MessageId, msg.TestCode);
+                    return result;
                 }
-                // If still null (MULTI not seeded), log warning but continue — SxaTestId will be null
-                if (testMap == null)
-                    _logger.LogWarning("HL7 {MsgId}: OBR-4 '{Code}' unmapped and no MULTI fallback", msg.MessageId, msg.TestCode);
 
                 // ── Step 4: Create/find LabOrder (CDM §4.1) ─────────────────
                 var order = await _db.Orders.FirstOrDefaultAsync(o =>
@@ -188,6 +188,18 @@ public class Hl7Processor
                 };
                 _db.ResultHeaders.Add(header);
                 await _db.SaveChangesAsync();
+
+                // ── Step 5b: Persist NTE lab notes (if any) ──────────────────
+                for (int i = 0; i < msg.Notes.Count; i++)
+                {
+                    _db.LabNotes.Add(new LabNote {
+                        TenantId       = tenantId,
+                        ResultHeaderId = header.Id,
+                        NoteText       = msg.Notes[i],
+                        SortOrder      = i
+                    });
+                }
+                if (msg.Notes.Count > 0) await _db.SaveChangesAsync();
 
                 // ── Step 6: Create ResultValue per OBX (CDM §4.3) ───────────
                 int saved       = 0;

@@ -13,6 +13,8 @@ const routes = [
   { path: '/users', name: 'Users', component: () => import('../views/UsersView.vue') },
   { path: '/clinics', name: 'Clinics', component: () => import('../views/ClinicsView.vue') },
   { path: '/hl7-inbox', name: 'Hl7Inbox', component: () => import('../views/Hl7InboxView.vue') },
+  { path: '/longitudinal/:patientId', name: 'Longitudinal', component: () => import('../views/LongitudinalView.vue') },
+  { path: '/settings', name: 'Settings', component: () => import('../views/SettingsView.vue') },
   { path: '/:pathMatch(.*)*', redirect: '/dashboard' }
 ]
 

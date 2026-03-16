@@ -39,9 +39,12 @@
               </td>
               <td>
                 <div class="flex gap-2">
-                  <button class="btn btn-outline btn-sm" @click="openEdit(c)">Edit</button>
-                  <button class="btn btn-sm" :class="c.isActive ? 'btn-danger' : 'btn-primary'" @click="toggleActive(c)">
-                    {{ c.isActive ? 'Deactivate' : 'Activate' }}
+                  <button class="action-btn edit" title="Edit" @click="openEdit(c)">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  </button>
+                  <button v-if="!c.isActive" class="btn btn-primary btn-sm" @click="toggleActive(c)">Activate</button>
+                  <button v-if="c.isActive" class="action-btn delete" title="Deactivate" @click="toggleActive(c)">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
                   </button>
                 </div>
               </td>
@@ -110,6 +113,8 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useAuthStore } from '../store/auth'
 import api from '../services/api'
+import { useDialog } from '../composables/useDialog'
+const dialog = useDialog()
 
 const auth = useAuthStore()
 const clinics = ref([])
@@ -162,7 +167,7 @@ async function saveClinic() {
 }
 
 async function toggleActive(c) {
-  if (c.isActive && !confirm(`Deactivate ${c.name}? Users in this clinic will lose access.`)) return
+  if (c.isActive && !await dialog.confirm(`Deactivate ${c.name}? Users in this clinic will lose access.`, 'Deactivate Clinic')) return
   await api.patch(`/clinics/${c.id}/${c.isActive ? 'deactivate' : 'activate'}`)
   await load()
 }

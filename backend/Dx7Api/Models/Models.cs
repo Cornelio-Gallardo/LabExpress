@@ -324,6 +324,34 @@ public class ShiftSchedule
     public ICollection<ShiftNurseAssignment> NurseAssignments { get; set; } = new List<ShiftNurseAssignment>();
 }
 
+// ── AuditLog (Appendix B §4 — append-only audit trail) ───────────────────────
+public class AuditLog
+{
+    [Key] public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid TenantId { get; set; }
+    public Guid? UserId { get; set; }
+    [MaxLength(50)]  public string Action   { get; set; } = ""; // CREATE UPDATE DELETE DEACTIVATE ACTIVATE LOGIN
+    [MaxLength(100)] public string Entity   { get; set; } = ""; // User Patient Session MdNote etc.
+    public Guid? EntityId { get; set; }
+    public string? Before { get; set; }   // JSON snapshot
+    public string? After  { get; set; }   // JSON snapshot
+    [MaxLength(500)] public string? Notes  { get; set; }
+    public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+    [ForeignKey("TenantId")] public Tenant Tenant { get; set; } = null!;
+}
+
+// ── LabNote (NTE segments from HL7) ──────────────────────────────────────────
+public class LabNote
+{
+    [Key] public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid TenantId { get; set; }
+    public Guid ResultHeaderId { get; set; }
+    [Required] public string NoteText { get; set; } = "";
+    public int SortOrder { get; set; } = 0;
+    [ForeignKey("TenantId")]       public Tenant       Tenant       { get; set; } = null!;
+    [ForeignKey("ResultHeaderId")] public ResultHeader ResultHeader { get; set; } = null!;
+}
+
 // ── ShiftNurseAssignment ──────────────────────────────────────────────────────
 public class ShiftNurseAssignment
 {

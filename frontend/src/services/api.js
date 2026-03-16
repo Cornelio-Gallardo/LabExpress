@@ -1,22 +1,23 @@
 import axios from 'axios'
+import { useAuthStore } from '../store/auth'
 
 const api = axios.create({ baseURL: '/api' })
 
-// Attach JWT token to every request
+// CDM §8: token is memory-only — read from Pinia store, never from localStorage
 api.interceptors.request.use(config => {
-  const token = localStorage.getItem('dx7_token')
-  if (token) config.headers.Authorization = `Bearer ${token}`
+  const auth = useAuthStore()
+  if (auth.token) config.headers.Authorization = `Bearer ${auth.token}`
   return config
 })
 
-// Global 401 handler
+// Global 401 handler — session expired or invalid token
 api.interceptors.response.use(
   res => res,
   err => {
     if (err.response?.status === 401 && !window.location.pathname.includes('/login')) {
-      localStorage.removeItem('dx7_token')
-      localStorage.removeItem('dx7_user')
-      window.location.href = '/login'
+      const auth = useAuthStore()
+      auth.logout()                   // clear Pinia state + localStorage profile data
+      window.location.href = '/login' // hard redirect to force re-authentication
     }
     return Promise.reject(err)
   }
@@ -49,10 +50,11 @@ export const sessionsApi = {
 
 // ── Results ──────────────────────────────────────────────────────────────────
 export const resultsApi = {
-  getCurrent:  (patientId) => api.get(`/results/current/${patientId}`),
-  getHistory:  (patientId, testCode, params) => api.get(`/results/history/${patientId}/${testCode}`, { params }),
-  getCompare:  (patientId, count) => api.get(`/results/compare/${patientId}`, { params: { count } }),
-  getOrders:   (patientId) => api.get(`/results/orders/${patientId}`)
+  getCurrent:      (patientId) => api.get(`/results/current/${patientId}`),
+  getHistory:      (patientId, testCode, params) => api.get(`/results/history/${patientId}/${testCode}`, { params }),
+  getCompare:      (patientId, count) => api.get(`/results/compare/${patientId}`, { params: { count } }),
+  getOrders:       (patientId) => api.get(`/results/orders/${patientId}`),
+  getLongitudinal: (patientId, months = 6) => api.get(`/results/longitudinal/${patientId}`, { params: { months } })
 }
 
 // ── MD Notes ─────────────────────────────────────────────────────────────────
@@ -80,7 +82,41 @@ export const exportApi = {
   sessionPdf: (sessionId, opts) => api.get('/export/session-pdf', {
     params: { sessionId, ...opts },
     responseType: 'blob'
-  })
+  }),
+  shiftPdf: (sessionIds) => api.post('/export/shift-pdf', { sessionIds }, { responseType: 'blob' }),
+  urr: (params) => api.get('/export/urr', { params })
 }
 
 // ── Shift Management ─────────────────────────────────────────────────────────
+export const shiftsApi = {
+  getAll:        (params) => api.get('/shifts', { params }),
+  create:        (data) => api.post('/shifts', data),
+  update:        (id, data) => api.patch(`/shifts/${id}`, data),
+  delete:        (id) => api.delete(`/shifts/${id}`),
+  bulkCreate:    (data) => api.post('/shifts/bulk', data),
+  assignNurse:   (shiftId, data) => api.post(`/shifts/${shiftId}/nurses`, data),
+  removeNurse:   (shiftId, nurseId) => api.delete(`/shifts/${shiftId}/nurses/${nurseId}`)
+}
+
+// ── Branding / Tenant ─────────────────────────────────────────────────────────
+export const tenantApi = {
+  get:              () => api.get('/tenant'),
+  updateBranding:   (data) => api.patch('/tenant/branding', data),
+  getSxaTests:      () => api.get('/tenant/sxa-tests'),
+  getSxaAnalytes:   () => api.get('/tenant/sxa-analytes'),
+  getTestMaps:      () => api.get('/tenant/test-maps'),
+  createTestMap:    (data) => api.post('/tenant/test-maps', data),
+  deleteTestMap:    (id) => api.delete(`/tenant/test-maps/${id}`),
+  getAnalyteMaps:   () => api.get('/tenant/analyte-maps'),
+  createAnalyteMap: (data) => api.post('/tenant/analyte-maps', data),
+  deleteAnalyteMap: (id) => api.delete(`/tenant/analyte-maps/${id}`)
+}
+
+export const clinicsApi = {
+  getAll:           () => api.get('/clinics'),
+  create:           (data) => api.post('/clinics', data),
+  update:           (id, data) => api.patch(`/clinics/${id}`, data),
+  activate:         (id) => api.patch(`/clinics/${id}/activate`),
+  deactivate:       (id) => api.patch(`/clinics/${id}/deactivate`),
+  updateBranding:   (id, data) => api.patch(`/clinics/${id}/branding`, data)
+}

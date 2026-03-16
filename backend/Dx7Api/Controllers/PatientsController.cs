@@ -133,30 +133,8 @@ public class PatientsController : TenantBaseController
             p.ContactNumber, p.IsActive, resultStatus, days, lastDate));
     }
 
-    [HttpPost]
-    public async Task<IActionResult> Create([FromBody] CreatePatientRequest req)
-    {
-        if (!IsChargeNurse && !IsClinicAdmin && !IsPlAdmin)
-            return Forbid();
-
-        if (!ClientId.HasValue) return BadRequest(new { message = "Client context required" });
-
-        var patient = new Patient
-        {
-            TenantId     = TenantId,
-            ClientId     = ClientId.Value,
-            Name         = req.Name,
-            LisPatientId = req.LisPatientId,
-            PhilhealthNo = req.PhilhealthNo,
-            Birthdate    = req.Birthdate,
-            Gender       = req.Gender,
-            ContactNumber = req.ContactNumber
-        };
-
-        _db.Patients.Add(patient);
-        await _db.SaveChangesAsync();
-        return CreatedAtAction(nameof(GetById), new { id = patient.Id }, patient);
-    }
+    // CDM §3.3: No manual patient creation. Patients are created automatically from HL7.
+    // Corrections must be made in the LIS (HCLab). POST /api/patients is not permitted.
 
     [HttpDelete("{id}")]
     public async Task<IActionResult> Deactivate(Guid id)

@@ -2,9 +2,11 @@
   <div class="login-page">
     <div class="login-box">
       <div class="login-logo">
-        <div class="login-logo-icon">Dx7</div>
-        <div class="login-logo-name">Dx7</div>
+        <div class="dx7-logo dx7-logo-lg">
+          <span class="dx7-d">D</span><span class="dx7-x">X</span><span class="dx7-seven">7</span>
+        </div>
       </div>
+
 
       <!-- Step 1: Enter email to request reset -->
       <div v-if="step === 'request'">

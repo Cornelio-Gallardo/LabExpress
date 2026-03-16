@@ -199,6 +199,8 @@ import { ref, computed, reactive, onMounted } from 'vue'
 import { useAuthStore } from '../store/auth'
 import { patientsApi, sessionsApi, shiftsApi } from '../services/api'
 import { useRouter, useRoute } from 'vue-router'
+import { useDialog } from '../composables/useDialog'
+const dialog = useDialog()
 
 const auth   = useAuthStore()
 const router = useRouter()
@@ -353,7 +355,7 @@ async function quickAdd(patient) {
   } catch (e) {
     const status = e.response?.status
     const msg = e.response?.data?.message || e.response?.data || e.message || 'Unknown error'
-    alert(`Error ${status}: ${JSON.stringify(msg)}`)
+    await dialog.alert(`Error ${status}: ${JSON.stringify(msg)}`, 'Error')
   } finally { saving.value = false }
 }
 
@@ -374,7 +376,7 @@ async function addSelected() {
   } catch (e) {
     const status = e.response?.status
     const msg = e.response?.data?.message || e.response?.data || e.message || 'Unknown error'
-    alert(`Error ${status}: ${JSON.stringify(msg)}`)
+    await dialog.alert(`Error ${status}: ${JSON.stringify(msg)}`, 'Error')
     saving.value = false
   }
 }

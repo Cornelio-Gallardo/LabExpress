@@ -11,6 +11,14 @@
           </div>
         </div>
         <div class="flex gap-2">
+          <!-- Next/Prev navigation (roster context) -->
+          <template v-if="rosterIds.length > 1">
+            <button class="btn btn-outline btn-sm" :disabled="rosterIndex <= 0" @click="navRoster(-1)">← Prev</button>
+            <span class="roster-pos">{{ rosterIndex + 1 }} / {{ rosterIds.length }}</span>
+            <button class="btn btn-outline btn-sm" :disabled="rosterIndex >= rosterIds.length - 1" @click="navRoster(1)">Next →</button>
+          </template>
+          <!-- Longitudinal trends link -->
+          <router-link v-if="session" :to="`/longitudinal/${session.patientId}`" class="btn btn-outline btn-sm">📊 Trends</router-link>
           <button v-if="auth.canExport" class="btn-excel" @click="exportCsv">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
             Export CSV
@@ -236,13 +244,32 @@
 
 <script setup>
 import { ref, computed, onMounted, reactive } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { sessionsApi, resultsApi, notesApi, exportApi } from '../services/api'
+import { useDialog } from '../composables/useDialog'
+const dialog = useDialog()
 
 const auth      = useAuthStore()
 const route     = useRoute()
+const router    = useRouter()
 const sessionId = route.params.sessionId
+
+// ── Roster context for Next/Prev navigation ────────────────────────────────
+// Pass ?roster=id1,id2,... from the launching view to enable prev/next
+const rosterIds  = computed(() => {
+  const r = route.query.roster
+  if (!r) return []
+  return r.split(',').filter(Boolean)
+})
+const rosterIndex = computed(() => rosterIds.value.indexOf(sessionId))
+
+function navRoster(delta) {
+  const nextIdx = rosterIndex.value + delta
+  if (nextIdx < 0 || nextIdx >= rosterIds.value.length) return
+  const nextId = rosterIds.value[nextIdx]
+  router.push({ name: 'Session', params: { sessionId: nextId }, query: { roster: route.query.roster } })
+}
 
 const session   = ref(null)
 const orders    = ref([])   // raw CDM orders
@@ -484,6 +511,7 @@ td.col-latest   { background:#f8fbff; }
 .badge-h        { color:#dc2626; }
 .badge-l        { color:#2563eb; }
 .badge-n        { color:#16a34a; }
+.roster-pos     { font-size:12px; font-weight:600; color:var(--slate); padding:0 4px; align-self:center; white-space:nowrap; }
 .error-bar      { background:#fee2e2; border:1px solid #fca5a5; color:#dc2626; padding:12px 16px; border-radius:8px; margin-bottom:16px; font-size:13px; font-weight:600; }
 
 /* notes */

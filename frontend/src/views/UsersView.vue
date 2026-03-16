@@ -32,11 +32,16 @@
     <!-- Users table -->
     <div v-if="loading" class="loading">Loading users…</div>
     <div v-else class="card">
+      <div v-if="selectedUsers.length" class="bulk-bar">
+        <span class="bulk-count">{{ selectedUsers.length }} selected</span>
+        <button class="btn btn-outline btn-sm" @click="selectedUsers = []">✕ Deselect</button>
+      </div>
       <div class="table-card">
         <div class="table-wrap">
           <table>
           <thead>
             <tr>
+              <th style="width:36px; text-align:center"><input type="checkbox" :checked="allUsersSelected" @change="toggleSelectAllUsers" class="row-check" /></th>
               <th>Name</th>
               <th>Role</th>
               <th>Clinic</th>
@@ -47,6 +52,7 @@
           </thead>
           <tbody>
             <tr v-for="u in filtered" :key="u.id">
+              <td style="text-align:center"><input type="checkbox" :value="u.id" v-model="selectedUsers" class="row-check" /></td>
               <td>
                 <div class="user-avatar-row">
                   <div class="user-avatar-wrap" @click="auth.isAdmin && triggerAvatarUpload(u)" :style="auth.isAdmin ? 'cursor:pointer' : ''">
@@ -79,20 +85,18 @@
               <td class="text-sm text-slate">{{ formatDate(u.createdAt) }}</td>
               <td>
                 <div class="flex gap-2">
-                  <button class="btn btn-outline btn-sm" @click="openEdit(u)">Edit</button>
-                  <button
-                    v-if="u.id !== auth.user?.id"
-                    class="btn btn-sm"
-                    :class="u.isActive ? 'btn-danger' : 'btn-primary'"
-                    @click="toggleActive(u)"
-                  >
-                    {{ u.isActive ? 'Deactivate' : 'Activate' }}
+                  <button class="action-btn edit" title="Edit" @click="openEdit(u)">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  </button>
+                  <button v-if="u.id !== auth.user?.id && !u.isActive" class="btn btn-primary btn-sm" @click="toggleActive(u)">Activate</button>
+                  <button v-if="u.id !== auth.user?.id && u.isActive" class="action-btn delete" title="Deactivate" @click="toggleActive(u)">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
                   </button>
                 </div>
               </td>
             </tr>
             <tr v-if="filtered.length === 0">
-              <td colspan="6" style="text-align:center; padding:32px; color:var(--slate)">No users found</td>
+              <td colspan="7" style="text-align:center; padding:32px; color:var(--slate)">No users found</td>
             </tr>
           </tbody>
           </table>
@@ -205,6 +209,8 @@
 import { ref, computed, onMounted, reactive } from 'vue'
 import { useAuthStore } from '../store/auth'
 import api, { usersApi } from '../services/api'
+import { useDialog } from '../composables/useDialog'
+const dialog = useDialog()
 
 const auth = useAuthStore()
 const users = ref([])
@@ -264,6 +270,14 @@ const filtered = computed(() =>
   })
 )
 
+const selectedUsers = ref([])
+const allUsersSelected = computed(() =>
+  filtered.value.length > 0 && filtered.value.every(u => selectedUsers.value.includes(u.id))
+)
+function toggleSelectAllUsers(evt) {
+  selectedUsers.value = evt.target.checked ? filtered.value.map(u => u.id) : []
+}
+
 function triggerAvatarUpload(user) {
   const input = document.querySelector(`.avatar-file-input[data-uid="${user.id}"]`)
   input?.click()
@@ -276,18 +290,18 @@ async function onAvatarFile(evt, user) {
     const { data } = await usersApi.uploadAvatar(user.id, file)
     user.avatarUrl = data.avatarUrl + '?t=' + Date.now()
   } catch (e) {
-    alert('Upload failed: ' + (e.response?.data || e.message))
+    await dialog.alert('Upload failed: ' + (e.response?.data || e.message), 'Upload Failed')
   }
   evt.target.value = ''
 }
 
 async function removeAvatar(user) {
-  if (!confirm('Remove this photo?')) return
+  if (!await dialog.confirm('Remove this photo?', 'Remove Photo')) return
   try {
     await usersApi.deleteAvatar(user.id)
     user.avatarUrl = null
   } catch (e) {
-    alert('Failed: ' + (e.response?.data || e.message))
+    await dialog.alert('Failed: ' + (e.response?.data || e.message), 'Error')
   }
 }
 
@@ -404,7 +418,7 @@ async function saveUser() {
 
 async function toggleActive(u) {
   const action = u.isActive ? 'deactivate' : 'activate'
-  if (u.isActive && !confirm(`Deactivate ${u.name}? They will not be able to log in.`)) return
+  if (u.isActive && !await dialog.confirm(`Deactivate ${u.name}? They will not be able to log in.`, 'Deactivate User')) return
   await api.patch(`/users/${u.id}/${action}`)
   await load()
 }
@@ -443,6 +457,9 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.bulk-bar { display:flex; align-items:center; gap:10px; padding:8px 16px; background:#fef9c3; border-bottom:1px solid #fde68a; font-size:13px; }
+.bulk-count { font-weight:600; color:#92400e; }
+.row-check { width:15px; height:15px; cursor:pointer; }
 .role-badge {
   display: inline-flex;
   align-items: center;
