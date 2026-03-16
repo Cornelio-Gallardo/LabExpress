@@ -249,19 +249,19 @@ tbody td {
   display: inline-flex; align-items: center; justify-content: center;
   border: none; background: transparent;
   border-radius: 6px; cursor: pointer;
-  color: var(--slate); font-size: 14px; transition: all 0.12s;
+  color: #6b7280; font-size: 14px; transition: all 0.12s;
 }
-.action-btn:hover             { background: var(--off-white); color: var(--navy); }
-.action-btn.view              { color: #0891b2; background: transparent; }
+/* All variants: dark gray by default, colored on hover */
+.action-btn.view              { color: #6b7280; }
 .action-btn.view:hover        { color: #0e7490; background: #ecfeff; }
-.action-btn.edit              { color: #d97706; background: transparent; }
+.action-btn.edit              { color: #6b7280; }
 .action-btn.edit:hover        { color: #b45309; background: #fffbeb; }
-.action-btn.reprocess         { color: #2563eb; background: transparent; }
+.action-btn.reprocess         { color: #6b7280; }
 .action-btn.reprocess:hover   { color: #1d4ed8; background: #eff6ff; }
-.action-btn.reprocess:disabled { opacity: 0.5; cursor: not-allowed; }
-.action-btn.delete            { color: #dc2626; background: transparent; }
+.action-btn.reprocess:disabled { opacity: 0.4; cursor: not-allowed; }
+.action-btn.delete            { color: #6b7280; }
 .action-btn.delete:hover      { color: #b91c1c; background: #fef2f2; }
-.action-btn.delete:disabled   { opacity: 0.5; cursor: not-allowed; }
+.action-btn.delete:disabled   { opacity: 0.4; cursor: not-allowed; }
 
 /* ── Buttons ── */
 .btn {

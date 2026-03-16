@@ -305,7 +305,7 @@ using (var scope = app.Services.CreateScope())
               VALUES (v_hl7_1, v_tenant_id, 'SEED-CG-20260305', '[seeded] CBC GALLARDO CORNELIO 2026-03-05', '2026-03-05 07:00:00Z', true, false)
               ON CONFLICT ("Id") DO NOTHING;
 
-              INSERT INTO "Orders" ("Id","TenantId","ClientId","PatientId","AccessionNumber","SourceHl7MessageId","ReleasedAt","CreatedAt")
+              INSERT INTO "LabOrders" ("Id","TenantId","ClientId","PatientId","AccessionNumber","SourceHl7MessageId","ReleasedAt","CreatedAt")
               VALUES (v_ord_1, v_tenant_id, v_client_id, v_patient_id, 'CGACC001', v_hl7_1, '2026-03-05 07:00:00Z', '2026-03-05 07:00:00Z')
               ON CONFLICT ("Id") DO NOTHING;
 
@@ -335,7 +335,7 @@ using (var scope = app.Services.CreateScope())
               VALUES (v_hl7_2, v_tenant_id, 'SEED-CG-20260310', '[seeded] CBC GALLARDO CORNELIO 2026-03-10', '2026-03-10 07:00:00Z', true, false)
               ON CONFLICT ("Id") DO NOTHING;
 
-              INSERT INTO "Orders" ("Id","TenantId","ClientId","PatientId","AccessionNumber","SourceHl7MessageId","ReleasedAt","CreatedAt")
+              INSERT INTO "LabOrders" ("Id","TenantId","ClientId","PatientId","AccessionNumber","SourceHl7MessageId","ReleasedAt","CreatedAt")
               VALUES (v_ord_2, v_tenant_id, v_client_id, v_patient_id, 'CGACC002', v_hl7_2, '2026-03-10 07:00:00Z', '2026-03-10 07:00:00Z')
               ON CONFLICT ("Id") DO NOTHING;
 
@@ -365,7 +365,7 @@ using (var scope = app.Services.CreateScope())
               VALUES (v_hl7_3, v_tenant_id, 'SEED-CG-20260315', '[seeded] CBC GALLARDO CORNELIO 2026-03-15', '2026-03-15 07:00:00Z', true, false)
               ON CONFLICT ("Id") DO NOTHING;
 
-              INSERT INTO "Orders" ("Id","TenantId","ClientId","PatientId","AccessionNumber","SourceHl7MessageId","ReleasedAt","CreatedAt")
+              INSERT INTO "LabOrders" ("Id","TenantId","ClientId","PatientId","AccessionNumber","SourceHl7MessageId","ReleasedAt","CreatedAt")
               VALUES (v_ord_3, v_tenant_id, v_client_id, v_patient_id, 'CGACC003', v_hl7_3, '2026-03-15 07:00:00Z', '2026-03-15 07:00:00Z')
               ON CONFLICT ("Id") DO NOTHING;
 
