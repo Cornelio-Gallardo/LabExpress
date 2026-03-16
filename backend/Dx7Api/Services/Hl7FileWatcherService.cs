@@ -10,6 +10,8 @@ public class Hl7FileWatcherService : BackgroundService
     private readonly ILogger<Hl7FileWatcherService> _logger;
     private readonly IConfiguration _config;
     private readonly List<FileSystemWatcher> _watchers = new();
+    // Serialize all file processing — prevents concurrent DB writes and log file contention
+    private readonly SemaphoreSlim _processLock = new(1, 1);
 
     public Hl7FileWatcherService(
         IServiceScopeFactory scopeFactory,
@@ -84,7 +86,9 @@ public class Hl7FileWatcherService : BackgroundService
         {
             if (ct.IsCancellationRequested) return;
             await Task.Delay(300, ct); // let file finish writing
-            await ProcessFileAsync(e.FullPath, tenantDir, ct);
+            await _processLock.WaitAsync(ct);
+            try   { await ProcessFileAsync(e.FullPath, tenantDir, ct); }
+            finally { _processLock.Release(); }
         };
 
         _watchers.Add(watcher);
@@ -194,7 +198,7 @@ public class Hl7FileWatcherService : BackgroundService
                 r.AccessionId,
                 r.ResultsSaved.ToString(),
                 $"File: {fileName}",
-                r.Notes ?? ""
+                (r.Notes ?? "").ReplaceLineEndings(" ").Trim()
             );
             File.AppendAllText(Path.Combine(tenantDir, "dx7_hl7.log"), line + Environment.NewLine);
         }

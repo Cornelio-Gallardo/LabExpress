@@ -63,12 +63,12 @@
     <div v-if="showQuarantine" class="card" style="margin-bottom:16px">
       <div class="card-header">
         <div>
-          <div class="card-title">🔴 Quarantine</div>
+          <div class="card-title">🔴Quarantine</div>
           <div class="card-subtitle">Errored and duplicate HL7 files — review and action</div>
         </div>
       </div>
       <div v-if="!quarantineFiles.length" class="empty-state" style="padding:24px">
-        <div class="empty-icon">✅</div>
+        <div class="empty-icon"></div>
         <div class="empty-title">No quarantined files</div>
       </div>
       <div v-else class="table-card">
@@ -557,18 +557,16 @@ async function load() {
   try {
     const [statusRes, logRes] = await Promise.all([
       api.get('/hl7/inbox/status'),
-      api.get('/hl7/log?lines=200')
+      api.get('/hl7/log?lines=1000')
     ])
     status.value     = statusRes.data
     logEntries.value = logRes.data.entries || []
 
-    // Derive counts from log if folder counts are zero
-    if (!status.value.processed && logEntries.value.length > 0) {
-      status.value = {
-        ...status.value,
-        processed: logEntries.value.filter(e => e.status?.trim() === 'order_saved' || e.status?.trim() === 'processed').length,
-        errored:   logEntries.value.filter(e => e.status?.trim() === 'error').length,
-      }
+    // Always derive processed/error counts from the log so badges match the table
+    status.value = {
+      ...status.value,
+      processed: logEntries.value.filter(e => e.status?.trim() === 'order_saved' || e.status?.trim() === 'processed').length,
+      errored:   logEntries.value.filter(e => e.status?.trim() === 'error').length,
     }
   } catch (e) {
     console.error('HL7 load error', e)

@@ -40,6 +40,7 @@ public class Hl7Processor
             AccessionId = msg.AccessionId
         };
 
+        Models.Hl7Message? hl7Archive = null;
         try
         {
             // ── Step 1: Archive raw HL7 (CDM §2.1) ──────────────────────────
@@ -54,7 +55,7 @@ public class Hl7Processor
                 return result;
             }
 
-            var hl7Archive = new Models.Hl7Message
+            hl7Archive = new Models.Hl7Message
             {
                 TenantId         = tenantId,
                 MessageControlId = msg.MessageId,
@@ -281,8 +282,28 @@ public class Hl7Processor
             var inner = ex.InnerException?.InnerException?.Message
                      ?? ex.InnerException?.Message
                      ?? ex.Message;
-            result.Notes  = inner;
+            result.Notes = inner;
             _logger.LogError(ex, "HL7 {MsgId}: Processing error — {Inner}", msg.MessageId, inner);
+
+            // Mark the archived record quarantined so it doesn't sit as a ghost empty record
+            if (hl7Archive != null)
+            {
+                try
+                {
+                    _db.ChangeTracker.Clear();
+                    var archived = await _db.Hl7Messages.FindAsync(hl7Archive.Id);
+                    if (archived != null)
+                    {
+                        archived.QuarantineFlag   = true;
+                        archived.QuarantineReason = inner;
+                        await _db.SaveChangesAsync();
+                    }
+                }
+                catch (Exception saveEx)
+                {
+                    _logger.LogError(saveEx, "HL7 {MsgId}: Failed to mark record quarantined after error", msg.MessageId);
+                }
+            }
         }
 
         return result;
@@ -394,8 +415,22 @@ public class Hl7Processor
             CreatedAt    = DateTime.UtcNow,
         };
         _db.Patients.Add(newPatient);
-        await _db.SaveChangesAsync();
-        return (newPatient, true);
+        try
+        {
+            await _db.SaveChangesAsync();
+            return (newPatient, true);
+        }
+        catch (DbUpdateException ex)
+            when (ex.InnerException?.Message.Contains("23505") == true ||
+                  ex.InnerException?.InnerException?.Message.Contains("23505") == true)
+        {
+            // Race condition: another concurrent file inserted the same patient first.
+            // Clear the failed tracked entity and re-fetch the existing record.
+            _db.ChangeTracker.Clear();
+            var existing = await _db.Patients.FirstOrDefaultAsync(p =>
+                p.TenantId == tenantId && p.LisPatientId == msg.PatientId && p.IsActive);
+            return (existing, false);
+        }
     }
 }
 

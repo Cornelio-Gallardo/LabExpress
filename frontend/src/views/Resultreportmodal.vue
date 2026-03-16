@@ -86,47 +86,44 @@
                   @click="selectedDate = dg.date"
                 >
                   {{ dg.date }}
-                  <span class="date-tab-count">{{ dg.panels.reduce((s,p) => s + p.results.length, 0) }}</span>
+                  <span class="date-tab-count">{{ dg.panels.reduce((s, p) => s + p.results.length, 0) }}</span>
                 </button>
               </div>
 
-              <!-- Active date panels -->
-              <div v-if="activeDateGroup">
-                <div v-for="panel in activeDateGroup.panels" :key="panel.name" class="rpt-panel">
-                  <div class="rpt-panel-title">{{ panel.name }}</div>
-                  <table class="rpt-table">
-                    <thead>
-                      <tr>
-                        <th>Test Name</th>
-                        <th>Result</th>
-                        <th>Unit</th>
-                        <th>Flag</th>
-                        <th>Reference Range</th>
-                        <th>Source</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr v-for="r in panel.results" :key="r.id" :class="{ 'rpt-row-flag': r.abnormalFlag && r.abnormalFlag !== 'N' }">
-                        <td>
-                          <div class="rpt-test-name">{{ r.testName }}</div>
-                          <div class="rpt-test-code">{{ r.testCode }}</div>
-                        </td>
-                        <td>
-                          <span class="rpt-value" :class="r.abnormalFlag === 'H' ? 'rpt-h' : r.abnormalFlag === 'L' ? 'rpt-l' : r.abnormalFlag === 'N' ? 'rpt-n' : ''">
-                            {{ r.resultValue || (r.resultStatus === 'pending' ? 'Pending' : '—') }}
-                          </span>
-                        </td>
-                        <td class="rpt-unit">{{ r.resultUnit || '—' }}</td>
-                        <td>
-                          <span v-if="r.abnormalFlag" class="rpt-flag" :class="r.abnormalFlag === 'H' ? 'rpt-flag-h' : r.abnormalFlag === 'L' ? 'rpt-flag-l' : 'rpt-flag-n'">{{ r.abnormalFlag === 'N' ? 'Normal' : r.abnormalFlag }}</span>
-                          <span v-else class="text-slate">—</span>
-                        </td>
-                        <td class="rpt-ref">{{ r.referenceRange || '—' }}</td>
-                        <td class="rpt-source">{{ r.sourceLab || '—' }}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
+              <!-- Single flat table for active date -->
+              <div v-if="activeDateGroup" class="rpt-panel">
+                <table class="rpt-table">
+                  <thead>
+                    <tr>
+                      <th>Test Name</th>
+                      <th>Result</th>
+                      <th>Unit</th>
+                      <th>Flag</th>
+                      <th>Reference Range</th>
+                      <th>Source</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="r in activeDateResults" :key="r.id" :class="{ 'rpt-row-flag': r.abnormalFlag && r.abnormalFlag !== 'N' }">
+                      <td>
+                        <div class="rpt-test-name">{{ r.testName }}</div>
+                        <div class="rpt-test-code">{{ r.testCode }}</div>
+                      </td>
+                      <td>
+                        <span class="rpt-value" :class="r.abnormalFlag === 'H' ? 'rpt-h' : r.abnormalFlag === 'L' ? 'rpt-l' : r.abnormalFlag === 'N' ? 'rpt-n' : ''">
+                          {{ r.resultValue || (r.resultStatus === 'pending' ? 'Pending' : '—') }}
+                        </span>
+                      </td>
+                      <td class="rpt-unit">{{ r.resultUnit || '—' }}</td>
+                      <td>
+                        <span v-if="r.abnormalFlag" class="rpt-flag" :class="r.abnormalFlag === 'H' ? 'rpt-flag-h' : r.abnormalFlag === 'L' ? 'rpt-flag-l' : 'rpt-flag-n'">{{ r.abnormalFlag === 'N' ? 'N' : r.abnormalFlag }}</span>
+                        <span v-else class="text-slate">—</span>
+                      </td>
+                      <td class="rpt-ref">{{ r.referenceRange || '—' }}</td>
+                      <td class="rpt-source">{{ r.sourceLab || '—' }}</td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
 
@@ -168,17 +165,21 @@ const printedBy  = auth.user?.name    || ''
 const clinicName = auth.client?.name  || 'Dialysis Center'
 const tenantName = auth.tenant?.name  || 'LABExpress'
 
-function panelLabel(code) {
-  if (!code) return 'Other'
-  const c = code.toUpperCase()
-  // SXA analyte codes (CDM chain)
-  if (c === 'SXA_A_HGB' || c === 'SXA_A_HCT' || c === 'SXA_A_WBC' || c === 'SXA_A_PLT') return 'CBC'
-  if (c.startsWith('SXA_A_BUN')) return 'Chemistry'
-  if (c === 'SXA_A_CREAT' || c === 'SXA_A_NA' || c === 'SXA_A_K' || c === 'SXA_A_CA' ||
-      c === 'SXA_A_PHOS' || c === 'SXA_A_ALB' || c === 'SXA_A_GLU') return 'Chemistry'
-  // Legacy flat table codes (CBC-*, CHEM-*)
-  const prefix = c.split('-')[0]
-  return { CBC: 'CBC', CHEM: 'Chemistry', URINE: 'Urinalysis', UA: 'Urinalysis' }[prefix] || prefix || 'Other'
+function panelLabel(r) {
+  // Use the panel name from DB (ResultHeader → SxaTestCatalog.CanonicalName)
+  if (r.sxaTestName) return r.sxaTestName
+  // Fallback: derive from SxaTestId
+  if (r.sxaTestId) {
+    const id = r.sxaTestId.toUpperCase()
+    if (id.includes('CBC'))  return 'CBC'
+    if (id.includes('LIPID')) return 'Lipid Panel'
+    if (id.includes('CHEM') || id.includes('BUN') || id.includes('FBS') || id.includes('K'))
+      return 'Chemistry'
+    return r.sxaTestId
+  }
+  // Last resort: legacy flat codes
+  const prefix = (r.testCode || '').toUpperCase().split('-')[0]
+  return { CBC: 'CBC', CHEM: 'Chemistry', URINE: 'Urinalysis', UA: 'Urinalysis' }[prefix] || 'Other'
 }
 
 // Group by date (newest first), then by panel within each date
@@ -187,7 +188,7 @@ const dateGroups = computed(() => {
   for (const r of props.results) {
     const date = r.resultDate || 'Unknown Date'
     if (!byDate[date]) byDate[date] = {}
-    const panel = panelLabel(r.testCode)
+    const panel = panelLabel(r)
     if (!byDate[date][panel]) byDate[date][panel] = []
     byDate[date][panel].push(r)
   }
@@ -217,6 +218,13 @@ watch(() => props.results, () => {
 // Current date group
 const activeDateGroup = computed(() =>
   dateGroups.value.find(dg => dg.date === selectedDate.value) || dateGroups.value[0] || null
+)
+
+// Flat sorted results for the active date — single table, no panel sub-grouping
+const activeDateResults = computed(() =>
+  activeDateGroup.value
+    ? activeDateGroup.value.panels.flatMap(p => p.results)
+    : []
 )
 
 // Keep flat panels for backward compat (print uses all results)

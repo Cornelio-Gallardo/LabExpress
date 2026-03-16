@@ -346,6 +346,7 @@ public class ResultsController : TenantBaseController
             AccessionId:     v.ResultHeader.Order?.AccessionNumber,
             AnalyteCode:     v.AnalyteCode,
             SxaTestId:       v.ResultHeader.SxaTestId,
+            SxaTestName:     v.ResultHeader.SxaTest?.CanonicalName,
             ResultHeaderId:  v.ResultHeaderId,
             OrderId:         v.ResultHeader.OrderId,
             Hl7MessageId:    v.ResultHeader.SourceHl7MessageId

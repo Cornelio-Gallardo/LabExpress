@@ -1,13 +1,2 @@
-backend/Dx7Api/bin/Debug/net8.0/Dx7Api.dll
-backend/Dx7Api/bin/Debug/net8.0/Dx7Api.exe
-backend/Dx7Api/bin/Debug/net8.0/Dx7Api.pdb
-backend/Dx7Api/obj/Debug/net8.0/apphost.exe
-backend/Dx7Api/obj/Debug/net8.0/Dx7Api.AssemblyInfo.cs
-backend/Dx7Api/obj/Debug/net8.0/Dx7Api.AssemblyInfoInputs.cache
-backend/Dx7Api/obj/Debug/net8.0/Dx7Api.dll
-backend/Dx7Api/obj/Debug/net8.0/Dx7Api.pdb
-backend/Dx7Api/obj/Debug/net8.0/Dx7Api.sourcelink.json
-backend/Dx7Api/obj/Debug/net8.0/ref/Dx7Api.dll
-backend/Dx7Api/obj/Debug/net8.0/refint/Dx7Api.dll
-backend/Dx7Api/obj/Debug/net8.0/rjsmcshtml.dswa.cache.json
-backend/Dx7Api/obj/Debug/net8.0/rjsmrazor.dswa.cache.json
+backend/Dx7Api/bin/Debug/*.*
+backend/Dx7Api/HL7Inbox/*.*

@@ -90,43 +90,40 @@
                 </button>
               </div>
 
-              <!-- Active date panels -->
-              <div v-if="activeDateGroup">
-                <div v-for="panel in activeDateGroup.panels" :key="panel.name" class="rpt-panel">
-                  <div class="rpt-panel-title">{{ panel.name }}</div>
-                  <table class="rpt-table">
-                    <thead>
-                      <tr>
-                        <th>Test Name</th>
-                        <th>Result</th>
-                        <th>Unit</th>
-                        <th>Flag</th>
-                        <th>Reference Range</th>
-                        <th>Source</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr v-for="r in panel.results" :key="r.id" :class="{ 'rpt-row-flag': r.abnormalFlag }">
-                        <td>
-                          <div class="rpt-test-name">{{ r.testName }}</div>
-                          <div class="rpt-test-code">{{ r.testCode }}</div>
-                        </td>
-                        <td>
-                          <span class="rpt-value" :class="r.abnormalFlag === 'H' ? 'rpt-h' : r.abnormalFlag === 'L' ? 'rpt-l' : ''">
-                            {{ r.resultValue || (r.resultStatus === 'pending' ? 'Pending' : '—') }}
-                          </span>
-                        </td>
-                        <td class="rpt-unit">{{ r.resultUnit || '—' }}</td>
-                        <td>
-                          <span v-if="r.abnormalFlag" class="rpt-flag" :class="r.abnormalFlag === 'H' ? 'rpt-flag-h' : 'rpt-flag-l'">{{ r.abnormalFlag }}</span>
-                          <span v-else class="text-slate">—</span>
-                        </td>
-                        <td class="rpt-ref">{{ r.referenceRange || '—' }}</td>
-                        <td class="rpt-source">{{ r.sourceLab || '—' }}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
+              <!-- Single flat table — one header, all results -->
+              <div v-if="activeDateGroup" class="rpt-panel">
+                <table class="rpt-table">
+                  <thead>
+                    <tr>
+                      <th>Test Name</th>
+                      <th>Result</th>
+                      <th>Unit</th>
+                      <th>Flag</th>
+                      <th>Reference Range</th>
+                      <th>Source</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="r in activeDateResults" :key="r.id" :class="{ 'rpt-row-flag': r.abnormalFlag && r.abnormalFlag !== 'N' }">
+                      <td>
+                        <div class="rpt-test-name">{{ r.testName }}</div>
+                        <div class="rpt-test-code">{{ r.testCode }}</div>
+                      </td>
+                      <td>
+                        <span class="rpt-value" :class="r.abnormalFlag === 'H' ? 'rpt-h' : r.abnormalFlag === 'L' ? 'rpt-l' : ''">
+                          {{ r.resultValue || (r.resultStatus === 'pending' ? 'Pending' : '—') }}
+                        </span>
+                      </td>
+                      <td class="rpt-unit">{{ r.resultUnit || '—' }}</td>
+                      <td>
+                        <span v-if="r.abnormalFlag && r.abnormalFlag !== 'N'" class="rpt-flag" :class="r.abnormalFlag === 'H' ? 'rpt-flag-h' : 'rpt-flag-l'">{{ r.abnormalFlag }}</span>
+                        <span v-else class="rpt-flag rpt-flag-n">N</span>
+                      </td>
+                      <td class="rpt-ref">{{ r.referenceRange || '—' }}</td>
+                      <td class="rpt-source">{{ r.sourceLab || '—' }}</td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
 
@@ -168,18 +165,27 @@ const printedBy  = auth.user?.name    || ''
 const clinicName = auth.client?.name  || 'Dialysis Center'
 const tenantName = auth.tenant?.name  || 'LABExpress'
 
-function panelLabel(code) {
-  const prefix = (code || '').split('-')[0].toUpperCase()
-  return { CBC: 'CBC', CHEM: 'Chemistry', URINE: 'Urinalysis', UA: 'Urinalysis' }[prefix] || prefix || 'Other'
+function panelLabel(r) {
+  if (r.sxaTestName) return r.sxaTestName
+  if (r.sxaTestId) {
+    const id = r.sxaTestId.toUpperCase()
+    if (id.includes('CBC'))   return 'CBC'
+    if (id.includes('LIPID')) return 'Lipid Panel'
+    if (id.includes('CHEM') || id.includes('BUN') || id.includes('FBS') || id.includes('K'))
+      return 'Chemistry'
+    return r.sxaTestId
+  }
+  const prefix = (r.testCode || '').toUpperCase().split('-')[0]
+  return { CBC: 'CBC', CHEM: 'Chemistry', URINE: 'Urinalysis', UA: 'Urinalysis' }[prefix] || 'Other'
 }
 
-// Group by date (newest first), then by panel within each date
+// Group by date (newest first)
 const dateGroups = computed(() => {
   const byDate = {}
   for (const r of props.results) {
     const date = r.resultDate || 'Unknown Date'
     if (!byDate[date]) byDate[date] = {}
-    const panel = panelLabel(r.testCode)
+    const panel = panelLabel(r)
     if (!byDate[date][panel]) byDate[date][panel] = []
     byDate[date][panel].push(r)
   }
@@ -211,8 +217,10 @@ const activeDateGroup = computed(() =>
   dateGroups.value.find(dg => dg.date === selectedDate.value) || dateGroups.value[0] || null
 )
 
-// Keep flat panels for backward compat (print uses all results)
-const panels = computed(() => dateGroups.value.flatMap(dg => dg.panels))
+// Flat results for active date — single table, no panel sub-grouping
+const activeDateResults = computed(() =>
+  activeDateGroup.value ? activeDateGroup.value.panels.flatMap(p => p.results) : []
+)
 
 const printStyles = `
   *{box-sizing:border-box;margin:0;padding:0}
@@ -403,6 +411,7 @@ async function downloadPdf() {
 .rpt-flag        { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; }
 .rpt-flag-h      { background: var(--red-pale); color: var(--red); }
 .rpt-flag-l      { background: #dbeafe; color: #1d4ed8; }
+.rpt-flag-n      { background: #dcfce7; color: #16a34a; }
 .rpt-unit        { color: var(--slate); font-size: 12px; }
 .rpt-ref         { color: var(--slate); font-size: 11px; }
 .rpt-date        { color: var(--slate); font-size: 11px; white-space: nowrap; }

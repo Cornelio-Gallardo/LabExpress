@@ -378,6 +378,8 @@ public class Hl7Controller : TenantBaseController
         {
             var obxCode = !string.IsNullOrEmpty(obs.TestCode) ? obs.TestCode : msg.TestCode;
             if (string.IsNullOrEmpty(obxCode)) continue;
+            // Skip section-header OBX rows with empty values — same as processor
+            if (string.IsNullOrWhiteSpace(obs.ResultValue.Trim().Trim('"'))) continue;
             var alreadyChecked = unmappedAnalyteCodes.Contains(obxCode);
             if (alreadyChecked) continue;
             var mapped = await _db.TenantAnalyteMaps.AnyAsync(m =>
@@ -476,6 +478,8 @@ public class Hl7Controller : TenantBaseController
         {
             var obxCode = !string.IsNullOrEmpty(obs.TestCode) ? obs.TestCode : msg.TestCode;
             if (string.IsNullOrEmpty(obxCode)) continue;
+            // Skip section-header OBX rows with empty values — same as processor
+            if (string.IsNullOrWhiteSpace(obs.ResultValue.Trim().Trim('"'))) continue;
             if (unmappedAnalyteCodes.Contains(obxCode)) continue;
             var mapped = await _db.TenantAnalyteMaps.AnyAsync(m =>
                 m.TenantId == TenantId && m.TenantAnalyteCode == obxCode && m.IsActive);

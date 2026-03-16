@@ -101,6 +101,7 @@ public record ResultDto(
     // CDM additions
     string? AnalyteCode,           // SXA analyte code
     string? SxaTestId,             // SXA test id
+    string? SxaTestName,           // SXA test canonical name (panel label)
     Guid?   ResultHeaderId,        // traceability → ResultHeader
     Guid?   OrderId,               // traceability → Order
     Guid?   Hl7MessageId           // traceability → HL7_Message

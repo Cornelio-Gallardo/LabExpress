@@ -472,6 +472,7 @@ public class ExportController : TenantBaseController
                 : Ok(Array.Empty<object>());
 
         var headers = await _db.ResultHeaders
+            .Include(h => h.SxaTest)
             .Where(h => h.TenantId == TenantId
                      && orderIds.Contains(h.OrderId)
                      && h.ResultDatetime >= req.FromDate.ToDateTime(TimeOnly.MinValue)
@@ -535,6 +536,7 @@ public class ExportController : TenantBaseController
                 AccessionId:     v.ResultHeader.Order?.AccessionNumber,
                 AnalyteCode:     v.AnalyteCode,
                 SxaTestId:       v.ResultHeader.SxaTestId,
+                SxaTestName:     v.ResultHeader.SxaTest?.CanonicalName,
                 ResultHeaderId:  v.ResultHeaderId,
                 OrderId:         v.ResultHeader.OrderId,
                 Hl7MessageId:    v.ResultHeader.SourceHl7MessageId
