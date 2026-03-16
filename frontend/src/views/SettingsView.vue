@@ -448,8 +448,4 @@ onMounted(loadData)
 .map-code-input  { width:180px !important; font-family:monospace; }
 .map-select      { flex:1; min-width:200px; }
 .map-error       { color:#dc2626; font-size:12px; }
-.icon-btn.delete { background:none; border:none; cursor:pointer; color:var(--text-muted); padding:4px; border-radius:4px; display:flex; align-items:center; justify-content:center; }
-.icon-btn.delete svg { width:16px; height:16px; }
-.icon-btn.delete:hover { background:#fee2e2; color:#dc2626; }
-code { font-family:monospace; background:var(--bg-muted); padding:1px 5px; border-radius:4px; font-size:12px; }
 </style>

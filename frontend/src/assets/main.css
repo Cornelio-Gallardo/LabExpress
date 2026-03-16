@@ -217,13 +217,14 @@ tbody tr {
   border-bottom: 1px solid #f3f4f6;
   transition: background 0.1s;
 }
-tbody tr:hover { background: #f8faff; }
 tbody tr:last-child { border-bottom: none; }
 tbody td {
   padding: 13px 18px;
   font-size: 13.5px; color: var(--table-td-color);
   vertical-align: middle;
+  transition: background 0.1s;
 }
+tbody tr:hover td { background: #f0f6ff; }
 .table-footer {
   padding: 11px 18px;
   border-top: 1px solid #f3f4f6;
@@ -241,6 +242,29 @@ tbody td {
 }
 .pagination-btn:hover:not(:disabled) { border-color: #93c5fd; color: #2563eb; background: #eff6ff; }
 .pagination-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── Inline icon button (delete/edit inside table cells) ── */
+.icon-btn {
+  background: none; border: none; cursor: pointer;
+  color: #6b7280; padding: 4px; border-radius: 4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: all 0.12s;
+}
+.icon-btn svg { width: 16px; height: 16px; }
+.icon-btn:hover           { background: var(--off-white); color: var(--navy); }
+.icon-btn.delete:hover    { background: #fee2e2; color: #dc2626; }
+.icon-btn.edit:hover      { background: #fffbeb; color: #b45309; }
+.icon-btn.view:hover      { background: #ecfeff; color: #0e7490; }
+
+/* ── Inline code tag ── */
+code {
+  font-family: 'Courier New', monospace;
+  background: #f1f5f9;
+  color: #334155;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+}
 
 /* ── Action icon buttons (eye / edit / reset / delete) ── */
 .actions-cell { display: flex; align-items: center; gap: 4px; }

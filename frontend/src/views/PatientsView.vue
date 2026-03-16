@@ -310,9 +310,8 @@ onMounted(load)
 .pill-nodata { background: #f1f5f9; color: var(--slate); }
 
 /* Patient rows */
-.patient-row { cursor: pointer; transition: background 0.12s; }
-.patient-row:hover td { background: #f0fdfe; }
-.row-selected td { background: #e6f7f8 !important; border-bottom: none; }
+.patient-row { cursor: pointer; }
+.row-selected td { background: #dbeafe !important; }
 
 /* Mono tags */
 .mono-tag { font-family: monospace; font-size: 12px; background: var(--off-white); padding: 2px 7px; border-radius: 4px; }

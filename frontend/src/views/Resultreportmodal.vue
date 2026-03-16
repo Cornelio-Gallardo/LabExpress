@@ -402,7 +402,7 @@ async function downloadPdf() {
 .rpt-table th    { padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--table-head-color); text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
 .rpt-table td    { padding: 9px 12px; border-bottom: 1px solid var(--border-light); vertical-align: middle; color: var(--table-td-color); }
 .rpt-table tbody tr:last-child td { border-bottom: none; }
-.rpt-table tbody tr:hover { background: var(--off-white); }
+.rpt-table tbody tr:hover td { background: transparent; }
 .rpt-row-flag    { background: white !important; }
 .rpt-test-name   { font-weight: 500; color: var(--navy-mid); }
 .rpt-test-code   { font-size: 10px; color: var(--slate-light); margin-top: 1px; }

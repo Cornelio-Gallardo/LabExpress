@@ -851,7 +851,7 @@ onUnmounted(() => clearInterval(autoRefresh))
   max-height: 320px; overflow-y: auto;
   margin: 0;
 }
-.log-row-clickable:hover td { background: var(--primary-light) !important; }
+.log-row-clickable:hover td { background: #f0f6ff; }
 .btn-danger { background: #dc2626; color: white; border: none; }
 .btn-danger:hover:not(:disabled) { background: #b91c1c; }
 .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
