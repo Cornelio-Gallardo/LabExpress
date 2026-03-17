@@ -11,11 +11,11 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:5000',
+        target: '152.42.232.18:5000',
         changeOrigin: true
       },
       '/avatars': {
-        target: 'http://localhost:5000',
+        target: '152.42.232.18:5000',
         changeOrigin: true
       }
     }
