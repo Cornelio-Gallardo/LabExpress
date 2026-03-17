@@ -310,6 +310,7 @@ public class Hl7Processor(AppDbContext db, ILogger<Hl7Processor> logger)
                      ?? ex.InnerException?.Message
                      ?? ex.Message;
             result.Notes = inner;
+            inner = inner.Length > 497 ? inner[..497] + "..." : inner;
             _logger.LogError(ex, "HL7 {MsgId}: Processing error — {Inner}", msg.MessageId, inner);
 
             // Mark the archived record quarantined so it doesn't sit as a ghost empty record
@@ -400,9 +401,10 @@ public class Hl7Processor(AppDbContext db, ILogger<Hl7Processor> logger)
 
         if (!string.IsNullOrEmpty(msg.PatientName))
         {
+            var patientNameLower = msg.PatientName.ToLower();
             var byName = await _db.Patients.FirstOrDefaultAsync(p =>
                 p.TenantId == tenantId &&
-                string.Equals(p.Name, msg.PatientName, StringComparison.OrdinalIgnoreCase) &&
+                p.Name.ToLower() == patientNameLower &&
                 p.IsActive);
             if (byName != null)
             {
