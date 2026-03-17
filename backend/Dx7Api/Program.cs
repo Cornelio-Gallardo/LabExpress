@@ -438,21 +438,21 @@ using (var scope = app.Services.CreateScope())
               VALUES (v_hdr_1, v_tenant_id, v_ord_1, v_hl7_1, 'SXA_TEST_CBC', '2026-03-05 07:00:00Z', '2026-03-05 07:00:00Z')
               ON CONFLICT ("Id") DO NOTHING;
 
-              INSERT INTO "ResultValues" ("Id","TenantId","ResultHeaderId","AnalyteCode","DisplayValue","ValueNumeric","Unit","ReferenceRangeLow","ReferenceRangeHigh","ReferenceRangeRaw","AbnormalFlag")
+              INSERT INTO "ResultValues" ("Id","TenantId","ResultHeaderId","AnalyteCode","DisplayValue","ValueNumeric","Unit","ReferenceRangeLow","ReferenceRangeHigh","ReferenceRangeRaw","AbnormalFlag","NoSpecimen","NotCalculated","SchemaVersion")
               VALUES
-                (gen_random_uuid(), v_tenant_id, v_hdr_1, 'SXA_A_HGB',   '9.2',  9.2,  'g/dL',   14.0, 18.0, '14.0 - 18.0', 'L'),
-                (gen_random_uuid(), v_tenant_id, v_hdr_1, 'SXA_A_HCT',  '28.1', 28.1,  '%',      42.0, 52.0, '42.0 - 52.0', 'L'),
-                (gen_random_uuid(), v_tenant_id, v_hdr_1, 'SXA_A_RBC',  '3.12', 3.12,  'x10¹²/L', 4.5,  6.1, '4.5 - 6.1',  'L'),
-                (gen_random_uuid(), v_tenant_id, v_hdr_1, 'SXA_A_MCV',  '90.1', 90.1,  'fL',     80.0,100.0, '80.0 - 100.0', null),
-                (gen_random_uuid(), v_tenant_id, v_hdr_1, 'SXA_A_MCH',  '29.5', 29.5,  'pg',     28.0, 32.0, '28.0 - 32.0', null),
-                (gen_random_uuid(), v_tenant_id, v_hdr_1, 'SXA_A_MCHC', '32.7', 32.7,  'g/dL',   32.0, 36.0, '32.0 - 36.0', null),
-                (gen_random_uuid(), v_tenant_id, v_hdr_1, 'SXA_A_WBC',  '6.20', 6.20,  'x10⁹/L',  5.0, 10.0, '5.0 - 10.0',  null),
-                (gen_random_uuid(), v_tenant_id, v_hdr_1, 'SXA_A_NEUT', '0.62', 0.62,  '',       0.50, 0.70, '0.50 - 0.70', null),
-                (gen_random_uuid(), v_tenant_id, v_hdr_1, 'SXA_A_LYMPH','0.25', 0.25,  '',       0.20, 0.40, '0.20 - 0.40', null),
-                (gen_random_uuid(), v_tenant_id, v_hdr_1, 'SXA_A_MONO', '0.08', 0.08,  '',       0.03, 0.05, '0.03 - 0.05', 'H'),
-                (gen_random_uuid(), v_tenant_id, v_hdr_1, 'SXA_A_EO',   '0.04', 0.04,  '',       0.00, 0.03, '0.00 - 0.03', 'H'),
-                (gen_random_uuid(), v_tenant_id, v_hdr_1, 'SXA_A_BASO', '0.01', 0.01,  '',       0.00, 0.02, '0.00 - 0.02', null),
-                (gen_random_uuid(), v_tenant_id, v_hdr_1, 'SXA_A_PLT',   '188', 188,   'x10⁹/L',150.0,400.0,'150 - 400',   null)
+                (gen_random_uuid(), v_tenant_id, v_hdr_1, 'SXA_A_HGB',   '9.2',  9.2,  'g/dL',   14.0, 18.0, '14.0 - 18.0', 'L',   false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_1, 'SXA_A_HCT',  '28.1', 28.1,  '%',      42.0, 52.0, '42.0 - 52.0', 'L',   false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_1, 'SXA_A_RBC',  '3.12', 3.12,  'x10¹²/L', 4.5,  6.1, '4.5 - 6.1',  'L',   false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_1, 'SXA_A_MCV',  '90.1', 90.1,  'fL',     80.0,100.0, '80.0 - 100.0', null, false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_1, 'SXA_A_MCH',  '29.5', 29.5,  'pg',     28.0, 32.0, '28.0 - 32.0', null,  false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_1, 'SXA_A_MCHC', '32.7', 32.7,  'g/dL',   32.0, 36.0, '32.0 - 36.0', null,  false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_1, 'SXA_A_WBC',  '6.20', 6.20,  'x10⁹/L',  5.0, 10.0, '5.0 - 10.0',  null, false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_1, 'SXA_A_NEUT', '0.62', 0.62,  '',       0.50, 0.70, '0.50 - 0.70', null,  false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_1, 'SXA_A_LYMPH','0.25', 0.25,  '',       0.20, 0.40, '0.20 - 0.40', null,  false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_1, 'SXA_A_MONO', '0.08', 0.08,  '',       0.03, 0.05, '0.03 - 0.05', 'H',   false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_1, 'SXA_A_EO',   '0.04', 0.04,  '',       0.00, 0.03, '0.00 - 0.03', 'H',   false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_1, 'SXA_A_BASO', '0.01', 0.01,  '',       0.00, 0.02, '0.00 - 0.02', null,  false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_1, 'SXA_A_PLT',   '188', 188,   'x10⁹/L',150.0,400.0,'150 - 400',   null,  false, false, 'DX7_CDM_1.0_A1')
               ON CONFLICT DO NOTHING;
 
               -- ── Day 2: 2026-03-10 ─────────────────────────────────────────
@@ -468,21 +468,21 @@ using (var scope = app.Services.CreateScope())
               VALUES (v_hdr_2, v_tenant_id, v_ord_2, v_hl7_2, 'SXA_TEST_CBC', '2026-03-10 07:00:00Z', '2026-03-10 07:00:00Z')
               ON CONFLICT ("Id") DO NOTHING;
 
-              INSERT INTO "ResultValues" ("Id","TenantId","ResultHeaderId","AnalyteCode","DisplayValue","ValueNumeric","Unit","ReferenceRangeLow","ReferenceRangeHigh","ReferenceRangeRaw","AbnormalFlag")
+              INSERT INTO "ResultValues" ("Id","TenantId","ResultHeaderId","AnalyteCode","DisplayValue","ValueNumeric","Unit","ReferenceRangeLow","ReferenceRangeHigh","ReferenceRangeRaw","AbnormalFlag","NoSpecimen","NotCalculated","SchemaVersion")
               VALUES
-                (gen_random_uuid(), v_tenant_id, v_hdr_2, 'SXA_A_HGB',  '10.4', 10.4,  'g/dL',   14.0, 18.0, '14.0 - 18.0', 'L'),
-                (gen_random_uuid(), v_tenant_id, v_hdr_2, 'SXA_A_HCT',  '31.5', 31.5,  '%',      42.0, 52.0, '42.0 - 52.0', 'L'),
-                (gen_random_uuid(), v_tenant_id, v_hdr_2, 'SXA_A_RBC',  '3.45', 3.45,  'x10¹²/L', 4.5,  6.1, '4.5 - 6.1',  'L'),
-                (gen_random_uuid(), v_tenant_id, v_hdr_2, 'SXA_A_MCV',  '91.3', 91.3,  'fL',     80.0,100.0, '80.0 - 100.0', null),
-                (gen_random_uuid(), v_tenant_id, v_hdr_2, 'SXA_A_MCH',  '30.1', 30.1,  'pg',     28.0, 32.0, '28.0 - 32.0', null),
-                (gen_random_uuid(), v_tenant_id, v_hdr_2, 'SXA_A_MCHC', '33.0', 33.0,  'g/dL',   32.0, 36.0, '32.0 - 36.0', null),
-                (gen_random_uuid(), v_tenant_id, v_hdr_2, 'SXA_A_WBC',  '7.10', 7.10,  'x10⁹/L',  5.0, 10.0, '5.0 - 10.0',  null),
-                (gen_random_uuid(), v_tenant_id, v_hdr_2, 'SXA_A_NEUT', '0.65', 0.65,  '',       0.50, 0.70, '0.50 - 0.70', null),
-                (gen_random_uuid(), v_tenant_id, v_hdr_2, 'SXA_A_LYMPH','0.23', 0.23,  '',       0.20, 0.40, '0.20 - 0.40', null),
-                (gen_random_uuid(), v_tenant_id, v_hdr_2, 'SXA_A_MONO', '0.07', 0.07,  '',       0.03, 0.05, '0.03 - 0.05', 'H'),
-                (gen_random_uuid(), v_tenant_id, v_hdr_2, 'SXA_A_EO',   '0.04', 0.04,  '',       0.00, 0.03, '0.00 - 0.03', 'H'),
-                (gen_random_uuid(), v_tenant_id, v_hdr_2, 'SXA_A_BASO', '0.01', 0.01,  '',       0.00, 0.02, '0.00 - 0.02', null),
-                (gen_random_uuid(), v_tenant_id, v_hdr_2, 'SXA_A_PLT',   '204', 204,   'x10⁹/L',150.0,400.0,'150 - 400',   null)
+                (gen_random_uuid(), v_tenant_id, v_hdr_2, 'SXA_A_HGB',  '10.4', 10.4,  'g/dL',   14.0, 18.0, '14.0 - 18.0', 'L',   false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_2, 'SXA_A_HCT',  '31.5', 31.5,  '%',      42.0, 52.0, '42.0 - 52.0', 'L',   false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_2, 'SXA_A_RBC',  '3.45', 3.45,  'x10¹²/L', 4.5,  6.1, '4.5 - 6.1',  'L',   false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_2, 'SXA_A_MCV',  '91.3', 91.3,  'fL',     80.0,100.0, '80.0 - 100.0', null, false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_2, 'SXA_A_MCH',  '30.1', 30.1,  'pg',     28.0, 32.0, '28.0 - 32.0', null,  false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_2, 'SXA_A_MCHC', '33.0', 33.0,  'g/dL',   32.0, 36.0, '32.0 - 36.0', null,  false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_2, 'SXA_A_WBC',  '7.10', 7.10,  'x10⁹/L',  5.0, 10.0, '5.0 - 10.0',  null, false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_2, 'SXA_A_NEUT', '0.65', 0.65,  '',       0.50, 0.70, '0.50 - 0.70', null,  false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_2, 'SXA_A_LYMPH','0.23', 0.23,  '',       0.20, 0.40, '0.20 - 0.40', null,  false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_2, 'SXA_A_MONO', '0.07', 0.07,  '',       0.03, 0.05, '0.03 - 0.05', 'H',   false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_2, 'SXA_A_EO',   '0.04', 0.04,  '',       0.00, 0.03, '0.00 - 0.03', 'H',   false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_2, 'SXA_A_BASO', '0.01', 0.01,  '',       0.00, 0.02, '0.00 - 0.02', null,  false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_2, 'SXA_A_PLT',   '204', 204,   'x10⁹/L',150.0,400.0,'150 - 400',   null,  false, false, 'DX7_CDM_1.0_A1')
               ON CONFLICT DO NOTHING;
 
               -- ── Day 3: 2026-03-15 ─────────────────────────────────────────
@@ -498,21 +498,21 @@ using (var scope = app.Services.CreateScope())
               VALUES (v_hdr_3, v_tenant_id, v_ord_3, v_hl7_3, 'SXA_TEST_CBC', '2026-03-15 07:00:00Z', '2026-03-15 07:00:00Z')
               ON CONFLICT ("Id") DO NOTHING;
 
-              INSERT INTO "ResultValues" ("Id","TenantId","ResultHeaderId","AnalyteCode","DisplayValue","ValueNumeric","Unit","ReferenceRangeLow","ReferenceRangeHigh","ReferenceRangeRaw","AbnormalFlag")
+              INSERT INTO "ResultValues" ("Id","TenantId","ResultHeaderId","AnalyteCode","DisplayValue","ValueNumeric","Unit","ReferenceRangeLow","ReferenceRangeHigh","ReferenceRangeRaw","AbnormalFlag","NoSpecimen","NotCalculated","SchemaVersion")
               VALUES
-                (gen_random_uuid(), v_tenant_id, v_hdr_3, 'SXA_A_HGB',  '11.8', 11.8,  'g/dL',   14.0, 18.0, '14.0 - 18.0', 'L'),
-                (gen_random_uuid(), v_tenant_id, v_hdr_3, 'SXA_A_HCT',  '35.2', 35.2,  '%',      42.0, 52.0, '42.0 - 52.0', 'L'),
-                (gen_random_uuid(), v_tenant_id, v_hdr_3, 'SXA_A_RBC',  '3.78', 3.78,  'x10¹²/L', 4.5,  6.1, '4.5 - 6.1',  'L'),
-                (gen_random_uuid(), v_tenant_id, v_hdr_3, 'SXA_A_MCV',  '93.1', 93.1,  'fL',     80.0,100.0, '80.0 - 100.0', null),
-                (gen_random_uuid(), v_tenant_id, v_hdr_3, 'SXA_A_MCH',  '31.2', 31.2,  'pg',     28.0, 32.0, '28.0 - 32.0', null),
-                (gen_random_uuid(), v_tenant_id, v_hdr_3, 'SXA_A_MCHC', '33.5', 33.5,  'g/dL',   32.0, 36.0, '32.0 - 36.0', null),
-                (gen_random_uuid(), v_tenant_id, v_hdr_3, 'SXA_A_WBC',  '6.85', 6.85,  'x10⁹/L',  5.0, 10.0, '5.0 - 10.0',  null),
-                (gen_random_uuid(), v_tenant_id, v_hdr_3, 'SXA_A_NEUT', '0.60', 0.60,  '',       0.50, 0.70, '0.50 - 0.70', null),
-                (gen_random_uuid(), v_tenant_id, v_hdr_3, 'SXA_A_LYMPH','0.27', 0.27,  '',       0.20, 0.40, '0.20 - 0.40', null),
-                (gen_random_uuid(), v_tenant_id, v_hdr_3, 'SXA_A_MONO', '0.08', 0.08,  '',       0.03, 0.05, '0.03 - 0.05', 'H'),
-                (gen_random_uuid(), v_tenant_id, v_hdr_3, 'SXA_A_EO',   '0.04', 0.04,  '',       0.00, 0.03, '0.00 - 0.03', 'H'),
-                (gen_random_uuid(), v_tenant_id, v_hdr_3, 'SXA_A_BASO', '0.01', 0.01,  '',       0.00, 0.02, '0.00 - 0.02', null),
-                (gen_random_uuid(), v_tenant_id, v_hdr_3, 'SXA_A_PLT',   '221', 221,   'x10⁹/L',150.0,400.0,'150 - 400',   null)
+                (gen_random_uuid(), v_tenant_id, v_hdr_3, 'SXA_A_HGB',  '11.8', 11.8,  'g/dL',   14.0, 18.0, '14.0 - 18.0', 'L',   false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_3, 'SXA_A_HCT',  '35.2', 35.2,  '%',      42.0, 52.0, '42.0 - 52.0', 'L',   false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_3, 'SXA_A_RBC',  '3.78', 3.78,  'x10¹²/L', 4.5,  6.1, '4.5 - 6.1',  'L',   false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_3, 'SXA_A_MCV',  '93.1', 93.1,  'fL',     80.0,100.0, '80.0 - 100.0', null, false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_3, 'SXA_A_MCH',  '31.2', 31.2,  'pg',     28.0, 32.0, '28.0 - 32.0', null,  false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_3, 'SXA_A_MCHC', '33.5', 33.5,  'g/dL',   32.0, 36.0, '32.0 - 36.0', null,  false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_3, 'SXA_A_WBC',  '6.85', 6.85,  'x10⁹/L',  5.0, 10.0, '5.0 - 10.0',  null, false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_3, 'SXA_A_NEUT', '0.60', 0.60,  '',       0.50, 0.70, '0.50 - 0.70', null,  false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_3, 'SXA_A_LYMPH','0.27', 0.27,  '',       0.20, 0.40, '0.20 - 0.40', null,  false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_3, 'SXA_A_MONO', '0.08', 0.08,  '',       0.03, 0.05, '0.03 - 0.05', 'H',   false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_3, 'SXA_A_EO',   '0.04', 0.04,  '',       0.00, 0.03, '0.00 - 0.03', 'H',   false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_3, 'SXA_A_BASO', '0.01', 0.01,  '',       0.00, 0.02, '0.00 - 0.02', null,  false, false, 'DX7_CDM_1.0_A1'),
+                (gen_random_uuid(), v_tenant_id, v_hdr_3, 'SXA_A_PLT',   '221', 221,   'x10⁹/L',150.0,400.0,'150 - 400',   null,  false, false, 'DX7_CDM_1.0_A1')
               ON CONFLICT DO NOTHING;
             END $$;
         """);
