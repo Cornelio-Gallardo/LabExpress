@@ -44,6 +44,9 @@ public class AppDbContext : DbContext
     public DbSet<AuditLog>        AuditLogs        => Set<AuditLog>();
     public DbSet<LabNote>         LabNotes         => Set<LabNote>();
 
+    // ── System reference data (statuses, flags, labels) ───────────────────────
+    public DbSet<RefData>         RefData          => Set<RefData>();
+
     // Set from middleware for global query filters and audit
     public Guid? CurrentTenantId { get; set; }
     public Guid? CurrentUserId   { get; set; }
@@ -193,6 +196,28 @@ public class AppDbContext : DbContext
             modelBuilder.Entity<Hl7Message>()
                 .Property(m => m.RawPayload)
                 .HasConversion(hl7Converter);
+        }
+
+        // ── DateTime UTC normalization — Npgsql v6+ requires Kind=Utc ───────
+        // Applies to every DateTime / DateTime? property across all entities.
+        var utcConverter = new ValueConverter<DateTime, DateTime>(
+            v => v.Kind == DateTimeKind.Utc ? v : DateTime.SpecifyKind(v, DateTimeKind.Utc),
+            v => DateTime.SpecifyKind(v, DateTimeKind.Utc));
+        var utcNullableConverter = new ValueConverter<DateTime?, DateTime?>(
+            v => v.HasValue
+                ? (v.Value.Kind == DateTimeKind.Utc ? v : DateTime.SpecifyKind(v.Value, DateTimeKind.Utc))
+                : v,
+            v => v.HasValue ? DateTime.SpecifyKind(v.Value, DateTimeKind.Utc) : v);
+
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            foreach (var property in entityType.GetProperties())
+            {
+                if (property.ClrType == typeof(DateTime))
+                    property.SetValueConverter(utcConverter);
+                else if (property.ClrType == typeof(DateTime?))
+                    property.SetValueConverter(utcNullableConverter);
+            }
         }
 
         // ── String PKs — no auto-generate ────────────────────────────────────

@@ -20,17 +20,15 @@ namespace Dx7Api.Services.Hl7;
 ///      - unmapped OBX quarantined individually, others persist
 ///   8. Create ResultValue per OBX              (§4.3)
 /// </summary>
-public class Hl7Processor
+public class Hl7Processor(AppDbContext db, ILogger<Hl7Processor> logger)
 {
-    private readonly AppDbContext _db;
-    private readonly ILogger<Hl7Processor> _logger;
+    private readonly AppDbContext _db = db;
+    private readonly ILogger<Hl7Processor> _logger = logger;
 
-    public Hl7Processor(AppDbContext db, ILogger<Hl7Processor> logger)
-    {
-        _db = db; _logger = logger;
-    }
+    private static readonly string[] DiscardKeywords =
+        ["COMPLETED", "PENDING", "DIFF", "DIFFERENTIAL COUNT", "SEE NOTE"];
 
-    public async Task<Hl7ProcessResult> ProcessAsync(Services.Hl7.Hl7Message msg, Guid tenantId, string rawPayload = "")
+    public async Task<Hl7ProcessResult> ProcessAsync(Hl7Message msg, Guid tenantId, string rawPayload = "")
     {
         var result = new Hl7ProcessResult
         {
@@ -210,21 +208,41 @@ public class Hl7Processor
                 {
                     var obxCode = !string.IsNullOrEmpty(obs.TestCode) ? obs.TestCode : msg.TestCode;
 
-                    // Skip blank values and quoted-empty strings (e.g. DIFF header has value="\"\"")
+                    // §10.2 row 4 + §10.3.3 — discard blank/quoted-empty structural OBX (e.g. DIFF header)
                     var cleanValue = obs.ResultValue.Trim().Trim('"');
                     if (string.IsNullOrWhiteSpace(cleanValue)) continue;
 
-                    // Skip ST-type OBX that are status/header rows (e.g. value="COMPLETED", value="DIFF")
-                    // Real result values are NM type or parseable text — not status keywords
-                    var statusKeywords = new[] { "COMPLETED", "PENDING", "DIFF", "DIFFERENTIAL COUNT", "SEE NOTE" };
-                    if (statusKeywords.Any(k => obs.ResultValue.Trim().Equals(k, StringComparison.OrdinalIgnoreCase)))
+                    // §10.3.3 — discard COMPLETED and other placeholder OBX rows
+                    if (DiscardKeywords.Any(k => cleanValue.Equals(k, StringComparison.OrdinalIgnoreCase)))
                         continue;
+
+                    // §10.2 — classify special value patterns before analyte map lookup
+                    bool noSpecimen    = cleanValue == "*";
+                    bool notCalculated = cleanValue == "---";
+
+                    // §10.3.1 — unknown non-numeric: quarantine ENTIRE message, stop processing
+                    if (!noSpecimen && !notCalculated)
+                    {
+                        bool isNumeric = decimal.TryParse(cleanValue,
+                            System.Globalization.NumberStyles.Any,
+                            System.Globalization.CultureInfo.InvariantCulture, out _);
+                        if (!isNumeric)
+                        {
+                            hl7Archive.QuarantineFlag   = true;
+                            hl7Archive.QuarantineReason = $"OBX-5 unknown non-numeric value '{cleanValue}' in OBX-3 '{obxCode}' — message quarantined per CDM §10.3.1.";
+                            await _db.SaveChangesAsync();
+                            result.Status = "quarantined";
+                            result.Notes  = hl7Archive.QuarantineReason;
+                            _logger.LogWarning("HL7 {MsgId}: unknown non-numeric OBX-5 '{Val}' — message quarantined per CDM §10.3.1", msg.MessageId, cleanValue);
+                            return result;
+                        }
+                    }
 
                     // Map OBX-3 → SXA_Analyte (CDM §6.2)
                     var analyteMap = await ResolveAnalyteMap(obxCode, tenantId);
                     if (analyteMap == null)
                     {
-                        // Per §6.3: quarantine this OBX only, others persist
+                        // §6.3: quarantine this OBX only, others persist
                         quarantined++;
                         hl7Archive.QuarantineFlag   = true;
                         hl7Archive.QuarantineReason = (hl7Archive.QuarantineReason ?? "") +
@@ -233,27 +251,36 @@ public class Hl7Processor
                         continue;
                     }
 
-                    decimal? numeric = null;
-                    if (decimal.TryParse(cleanValue,
-                        System.Globalization.NumberStyles.Any,
-                        System.Globalization.CultureInfo.InvariantCulture, out var parsed))
+                    // §10.3.2 — for '*' and '---': store null values, set flags; do not omit the row
+                    decimal? numeric      = null;
+                    string?  displayValue = null;
+                    if (!noSpecimen && !notCalculated)
+                    {
+                        displayValue = cleanValue;
+                        decimal.TryParse(cleanValue,
+                            System.Globalization.NumberStyles.Any,
+                            System.Globalization.CultureInfo.InvariantCulture, out var parsed);
                         numeric = parsed;
+                    }
 
                     (decimal? low, decimal? high) = ParseRefRange(obs.ReferenceRange);
 
                     _db.ResultValues.Add(new ResultValue
                     {
-                        ResultHeaderId    = header.Id,
-                        TenantId          = tenantId,
-                        AnalyteCode       = analyteMap.AnalyteCode,
-                        DisplayValue      = cleanValue,        // pass-through, no transformation
-                        ValueNumeric      = numeric,
-                        Unit              = obs.ResultUnit,
-                        ReferenceRangeLow   = low,
-                        ReferenceRangeHigh  = high,
-                        ReferenceRangeRaw   = obs.ReferenceRange,
-                        AbnormalFlag      = obs.AbnormalFlag is "H" or "L" or "N" ? obs.AbnormalFlag : null,  // OBX-8 raw — H/L/N stored
-                        RawHl7Segment     = obs.RawSegment,    // full OBX retained
+                        ResultHeaderId     = header.Id,
+                        TenantId           = tenantId,
+                        AnalyteCode        = analyteMap.AnalyteCode,
+                        DisplayValue       = displayValue ?? "",
+                        ValueNumeric       = numeric,
+                        Unit               = obs.ResultUnit,
+                        ReferenceRangeLow  = low,
+                        ReferenceRangeHigh = high,
+                        ReferenceRangeRaw  = obs.ReferenceRange,
+                        AbnormalFlag       = obs.AbnormalFlag is "H" or "L" or "N" ? obs.AbnormalFlag : null,
+                        RawHl7Segment      = obs.RawSegment,
+                        NoSpecimen         = noSpecimen,
+                        NotCalculated      = notCalculated,
+                        SchemaVersion      = "DX7_CDM_1.0_A1",
                     });
                     saved++;
                 }
@@ -334,7 +361,7 @@ public class Hl7Processor
         if (string.IsNullOrEmpty(raw)) return (null, null);
 
         // Handle "< 3.4" format (upper bound only)
-        if (raw.TrimStart().StartsWith("<"))
+        if (raw.TrimStart().StartsWith('<'))
         {
             var part = raw.Replace("<", "").Trim();
             return decimal.TryParse(part, System.Globalization.NumberStyles.Any,
@@ -345,7 +372,7 @@ public class Hl7Processor
         // Split on " - " first, then fall back to "-"
         string[] parts;
         if (raw.Contains(" - "))
-            parts = raw.Split(new[] { " - " }, StringSplitOptions.None);
+            parts = raw.Split([" - "], StringSplitOptions.None);
         else
             parts = raw.Split('-');
 
@@ -362,7 +389,7 @@ public class Hl7Processor
     // ── Patient resolution (CDM §3.3) ─────────────────────────────────────────
 
     private async Task<(Patient? patient, bool wasCreated)> ResolveOrCreatePatientAsync(
-        Services.Hl7.Hl7Message msg, Guid tenantId)
+        Hl7Message msg, Guid tenantId)
     {
         if (!string.IsNullOrEmpty(msg.PatientId))
         {
@@ -375,7 +402,7 @@ public class Hl7Processor
         {
             var byName = await _db.Patients.FirstOrDefaultAsync(p =>
                 p.TenantId == tenantId &&
-                p.Name.ToLower() == msg.PatientName.ToLower() &&
+                string.Equals(p.Name, msg.PatientName, StringComparison.OrdinalIgnoreCase) &&
                 p.IsActive);
             if (byName != null)
             {

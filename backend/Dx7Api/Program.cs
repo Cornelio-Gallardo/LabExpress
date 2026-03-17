@@ -124,7 +124,29 @@ using (var scope = app.Services.CreateScope())
                 CONSTRAINT "FK_LabNotes_ResultHeaders_ResultHeaderId"
                     FOREIGN KEY ("ResultHeaderId") REFERENCES "ResultHeaders" ("Id") ON DELETE CASCADE
             );
+
+            CREATE TABLE IF NOT EXISTS "RefData" (
+                "Id"          uuid                        NOT NULL,
+                "Category"    character varying(50)       NOT NULL DEFAULT '',
+                "Code"        character varying(50)       NOT NULL DEFAULT '',
+                "Label"       character varying(100)      NOT NULL DEFAULT '',
+                "Description" text                        NULL,
+                "SortOrder"   integer                     NOT NULL DEFAULT 0,
+                "IsActive"    boolean                     NOT NULL DEFAULT true,
+                CONSTRAINT "PK_RefData" PRIMARY KEY ("Id")
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_RefData_Category_Code"
+                ON "RefData" ("Category", "Code");
         """);
+        // CDM Amendment 1 §10.4 — add no_specimen, not_calculated flags to ResultValues
+        // CDM Amendment 1 §11.2 — add schema_version to ResultValues
+        await db.Database.ExecuteSqlRawAsync("""
+            ALTER TABLE "ResultValues"
+                ADD COLUMN IF NOT EXISTS "NoSpecimen"    boolean NOT NULL DEFAULT false,
+                ADD COLUMN IF NOT EXISTS "NotCalculated" boolean NOT NULL DEFAULT false,
+                ADD COLUMN IF NOT EXISTS "SchemaVersion" character varying(30) NOT NULL DEFAULT 'DX7_CDM_1.0_A1';
+        """);
+
         logger.LogInformation("DB schema patches applied");
 
         // Fix patient names that have a leading ", " from when PatientLastName was empty.
@@ -135,6 +157,39 @@ using (var scope = app.Services.CreateScope())
             WHERE "Name" ~ '^[,\s]';
         """);
         logger.LogInformation("Patient name cleanup applied");
+
+        // CDM Amendment 1 §9 — rename stale analyte codes to CDM-canonical IDs.
+        // SXA_A_CREAT → SXA_A_CREA,  SXA_A_GLU → SXA_A_FBS
+        // Also corrects ALB unit from g/dL to g/L per §9.3.
+        // Safe to run repeatedly — WHERE EXISTS guards each statement.
+        await db.Database.ExecuteSqlRawAsync("""
+            -- Step 1: Insert new canonical SxaAnalyte rows first (FK target must exist before referencing rows are updated)
+            INSERT INTO "SxaAnalytes" ("AnalyteCode", "DisplayName", "DefaultUnit", "ResultType")
+            SELECT 'SXA_A_CREA', "DisplayName", 'µmol/L', "ResultType"
+            FROM "SxaAnalytes" WHERE "AnalyteCode" = 'SXA_A_CREAT'
+            ON CONFLICT ("AnalyteCode") DO NOTHING;
+
+            INSERT INTO "SxaAnalytes" ("AnalyteCode", "DisplayName", "DefaultUnit", "ResultType")
+            SELECT 'SXA_A_FBS', 'Fasting Blood Sugar', 'mmol/L', "ResultType"
+            FROM "SxaAnalytes" WHERE "AnalyteCode" = 'SXA_A_GLU'
+            ON CONFLICT ("AnalyteCode") DO NOTHING;
+
+            -- Step 2: Update all FK references to point to new codes
+            UPDATE "ResultValues" SET "AnalyteCode" = 'SXA_A_CREA' WHERE "AnalyteCode" = 'SXA_A_CREAT';
+            UPDATE "ResultValues" SET "AnalyteCode" = 'SXA_A_FBS'  WHERE "AnalyteCode" = 'SXA_A_GLU';
+
+            UPDATE "TenantAnalyteMaps" SET "AnalyteCode" = 'SXA_A_CREA' WHERE "AnalyteCode" = 'SXA_A_CREAT';
+            UPDATE "TenantAnalyteMaps" SET "AnalyteCode" = 'SXA_A_FBS'  WHERE "AnalyteCode" = 'SXA_A_GLU';
+
+            -- Step 3: Delete old rows now that nothing references them
+            DELETE FROM "SxaAnalytes" WHERE "AnalyteCode" = 'SXA_A_CREAT';
+            DELETE FROM "SxaAnalytes" WHERE "AnalyteCode" = 'SXA_A_GLU';
+
+            -- Correct ALB unit per CDM §9.3
+            UPDATE "SxaAnalytes" SET "DefaultUnit" = 'g/L'
+            WHERE "AnalyteCode" = 'SXA_A_ALB' AND "DefaultUnit" = 'g/dL';
+        """);
+        logger.LogInformation("CDM Amendment 1 analyte code rename patches applied");
 
         // Ensure the full SXA catalog is present — safe to run repeatedly via ON CONFLICT DO NOTHING.
         // This covers both fresh DBs (before seeder runs) and existing DBs when new entries are added.
@@ -174,8 +229,8 @@ using (var scope = app.Services.CreateScope())
                 ('SXA_A_BUN_POST', 'BUN Post-Dialysis',           'mg/dL',     'NUMERIC'),
                 ('SXA_A_URR',      'URR',                         '%',         'NUMERIC'),
                 ('SXA_A_KTV',      'Kt/V',                        '',          'NUMERIC'),
-                ('SXA_A_CREAT',    'Creatinine',                  'µmol/L',    'NUMERIC'),
-                ('SXA_A_ALB',      'Albumin',                     'g/dL',      'NUMERIC'),
+                ('SXA_A_CREA',     'Creatinine',                  'µmol/L',    'NUMERIC'),
+                ('SXA_A_ALB',      'Albumin',                     'g/L',       'NUMERIC'),
                 ('SXA_A_ALKP',     'Alkaline Phosphatase',        'U/L',       'NUMERIC'),
                 ('SXA_A_UA',       'Uric Acid',                   'µmol/L',    'NUMERIC'),
                 ('SXA_A_PHOS',     'Inorganic Phosphorus',        'mg/dL',     'NUMERIC'),
@@ -183,7 +238,7 @@ using (var scope = app.Services.CreateScope())
                 ('SXA_A_K',        'Potassium',                   'mEq/L',     'NUMERIC'),
                 ('SXA_A_CA',       'Calcium',                     'mg/dL',     'NUMERIC'),
                 ('SXA_A_ICAL',     'Ionized Calcium',             'mmol/L',    'NUMERIC'),
-                ('SXA_A_GLU',      'Glucose (FBS)',               'mg/dL',     'NUMERIC'),
+                ('SXA_A_FBS',      'Fasting Blood Sugar',         'mmol/L',    'NUMERIC'),
                 ('SXA_A_ALT',      'SGPT (ALT)',                  'U/L',       'NUMERIC'),
                 ('SXA_A_HBA1C',    'HbA1c (Glycated Hgb)',        '%',         'NUMERIC'),
                 -- Lipid panel
@@ -247,7 +302,7 @@ using (var scope = app.Services.CreateScope())
                 ('BUNPOS',  'SXA_A_BUN_POST'),
                 ('URR',     'SXA_A_URR'),
                 ('KT/V',    'SXA_A_KTV'),
-                ('CREA',    'SXA_A_CREAT'),
+                ('CREA',    'SXA_A_CREA'),
                 ('ALB',     'SXA_A_ALB'),
                 ('ALKP',    'SXA_A_ALKP'),
                 ('UA',      'SXA_A_UA'),
@@ -255,7 +310,7 @@ using (var scope = app.Services.CreateScope())
                 ('NA',      'SXA_A_NA'),
                 ('K',       'SXA_A_K'),
                 ('ICAL',    'SXA_A_ICAL'),
-                ('FBS',     'SXA_A_GLU'),
+                ('FBS',     'SXA_A_FBS'),
                 ('ALT',     'SXA_A_ALT'),
                 ('HBA1C',   'SXA_A_HBA1C'),
                 -- Lipid panel
@@ -271,6 +326,76 @@ using (var scope = app.Services.CreateScope())
             );
         """);
         logger.LogInformation("HCLAB code mapping aliases ensured");
+
+        // ── RefData seed — all system status / flag / keyword values ─────────
+        // Safe to run repeatedly — ON CONFLICT DO NOTHING.
+        await db.Database.ExecuteSqlRawAsync("""
+            INSERT INTO "RefData" ("Id", "Category", "Code", "Label", "Description", "SortOrder", "IsActive")
+            VALUES
+                -- HL7 processing statuses
+                (gen_random_uuid(), 'Hl7Status', 'order_saved',   'Processed',   'HL7 file ingested and orders saved',              1,  true),
+                (gen_random_uuid(), 'Hl7Status', 'processed',     'Processed',   'HL7 file ingested successfully',                  2,  true),
+                (gen_random_uuid(), 'Hl7Status', 'duplicate',     'Duplicate',   'HL7 message already processed (duplicate MSH-10)',3,  true),
+                (gen_random_uuid(), 'Hl7Status', 'quarantined',   'Quarantined', 'HL7 file quarantined due to unmapped codes',      4,  true),
+                (gen_random_uuid(), 'Hl7Status', 'error',         'Error',       'HL7 processing failed with exception',            5,  true),
+                (gen_random_uuid(), 'Hl7Status', 'skipped',       'Skipped',     'HL7 file skipped (non-HL7 or empty)',             6,  true),
+                (gen_random_uuid(), 'Hl7Status', 'unknown',       'Unknown',     'Status not recognized',                          7,  true),
+
+                -- Result / order statuses
+                (gen_random_uuid(), 'ResultStatus', 'final',      'Final',       'Result is final and released',                   1,  true),
+                (gen_random_uuid(), 'ResultStatus', 'pending',    'Pending',     'Result awaiting verification',                   2,  true),
+                (gen_random_uuid(), 'ResultStatus', 'corrected',  'Corrected',   'Previously released result has been corrected',  3,  true),
+
+                -- Abnormal flags (OBX-8)
+                (gen_random_uuid(), 'AbnormalFlag', 'H',          'High',        'Result above reference range high',              1,  true),
+                (gen_random_uuid(), 'AbnormalFlag', 'L',          'Low',         'Result below reference range low',               2,  true),
+                (gen_random_uuid(), 'AbnormalFlag', 'N',          'Normal',      'Result within reference range',                  3,  true),
+                (gen_random_uuid(), 'AbnormalFlag', 'HH',         'Critical High','Result critically above range',                 4,  true),
+                (gen_random_uuid(), 'AbnormalFlag', 'LL',         'Critical Low', 'Result critically below range',                 5,  true),
+                (gen_random_uuid(), 'AbnormalFlag', 'A',          'Abnormal',    'Abnormal (non-numeric)',                         6,  true),
+
+                -- Gender codes
+                (gen_random_uuid(), 'Gender', 'M',               'Male',        NULL,                                             1,  true),
+                (gen_random_uuid(), 'Gender', 'F',               'Female',      NULL,                                             2,  true),
+                (gen_random_uuid(), 'Gender', 'U',               'Unknown',     NULL,                                             3,  true),
+
+                -- Audit actions
+                (gen_random_uuid(), 'AuditAction', 'CREATE',      'Created',     'Entity was created',                            1,  true),
+                (gen_random_uuid(), 'AuditAction', 'UPDATE',      'Updated',     'Entity was updated',                            2,  true),
+                (gen_random_uuid(), 'AuditAction', 'DELETE',      'Deleted',     'Entity was deleted',                            3,  true),
+                (gen_random_uuid(), 'AuditAction', 'ACTIVATE',    'Activated',   'Entity was activated (IsActive = true)',         4,  true),
+                (gen_random_uuid(), 'AuditAction', 'DEACTIVATE',  'Deactivated', 'Entity was deactivated (IsActive = false)',      5,  true),
+
+                -- OBX section-header keywords (empty-value rows to skip during ingestion)
+                (gen_random_uuid(), 'OBXSkipKeyword', 'DIFF',        'Differential header', 'CBC differential section header OBX',   1,  true),
+                (gen_random_uuid(), 'OBXSkipKeyword', 'COMPLETED',   'Completed header',    'Test completed section header OBX',     2,  true),
+                (gen_random_uuid(), 'OBXSkipKeyword', 'PENDING',     'Pending header',      'Pending section header OBX',            3,  true),
+                (gen_random_uuid(), 'OBXSkipKeyword', 'COMMENTS',    'Comments header',     'Comments section header OBX',           4,  true),
+                (gen_random_uuid(), 'OBXSkipKeyword', 'HEADER',      'Header row',          'Generic section header OBX',            5,  true),
+
+                -- User roles
+                (gen_random_uuid(), 'UserRole', 'pl_admin',      'Platform Admin',    'Platform-level administrator (all tenants)', 1,  true),
+                (gen_random_uuid(), 'UserRole', 'clinic_admin',  'Clinic Admin',      'Clinic-level administrator',                 2,  true),
+                (gen_random_uuid(), 'UserRole', 'charge_nurse',  'Charge Nurse',      'Charge nurse with scheduling rights',        3,  true),
+                (gen_random_uuid(), 'UserRole', 'shift_nurse',   'Shift Nurse',       'Bedside shift nurse',                        4,  true),
+                (gen_random_uuid(), 'UserRole', 'md',            'Physician (MD)',     'Nephrologist / attending physician',         5,  true),
+
+                -- HL7 v2.x segment identifiers recognized by the parser
+                -- Used when the file has no newlines and segments must be split by regex
+                (gen_random_uuid(), 'Hl7SegmentId', 'MSH', 'Message Header',           'HL7 message header segment',             1,  true),
+                (gen_random_uuid(), 'Hl7SegmentId', 'PID', 'Patient Identification',   'Patient demographics segment',           2,  true),
+                (gen_random_uuid(), 'Hl7SegmentId', 'PV1', 'Patient Visit',            'Patient visit info segment',             3,  true),
+                (gen_random_uuid(), 'Hl7SegmentId', 'PV2', 'Patient Visit Additional', 'Additional patient visit segment',       4,  true),
+                (gen_random_uuid(), 'Hl7SegmentId', 'ORC', 'Common Order',             'Order control segment',                  5,  true),
+                (gen_random_uuid(), 'Hl7SegmentId', 'OBR', 'Observation Request',      'Lab order / test panel segment',         6,  true),
+                (gen_random_uuid(), 'Hl7SegmentId', 'OBX', 'Observation Result',       'Individual analyte result segment',      7,  true),
+                (gen_random_uuid(), 'Hl7SegmentId', 'NTE', 'Notes and Comments',       'Free-text note segment',                 8,  true),
+                (gen_random_uuid(), 'Hl7SegmentId', 'SPM', 'Specimen',                 'Specimen description segment',           9,  true),
+                (gen_random_uuid(), 'Hl7SegmentId', 'SAC', 'Specimen Container',       'Specimen container segment',             10, true),
+                (gen_random_uuid(), 'Hl7SegmentId', 'IN1', 'Insurance',                'Insurance segment',                      11, true)
+            ON CONFLICT ("Category", "Code") DO NOTHING;
+        """);
+        logger.LogInformation("RefData seed ensured");
 
         // ── Test Patient: Cornelio Gallardo — 3 CBC result days ───────────────
         // Uses PL/pgSQL DO block with fixed UUIDs so it is fully idempotent.

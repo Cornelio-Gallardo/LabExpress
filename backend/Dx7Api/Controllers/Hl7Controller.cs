@@ -49,7 +49,7 @@ public class Hl7Controller : TenantBaseController
 
             try
             {
-                var msg    = Hl7Parser.Parse(content);
+                var msg    = Hl7Parser.Parse(content, await GetSegmentIdsAsync());
                 var result = await _processor.ProcessAsync(msg, TenantId, content);
                 results.Add(new {
                     file   = file.FileName,
@@ -89,7 +89,7 @@ public class Hl7Controller : TenantBaseController
         if (string.IsNullOrWhiteSpace(content))
             return BadRequest(new { message = "Empty message body" });
 
-        var msg    = Hl7Parser.Parse(content);
+        var msg    = Hl7Parser.Parse(content, await GetSegmentIdsAsync());
         var result = await _processor.ProcessAsync(msg, TenantId, content);
 
         return result.Status == "error"
@@ -318,7 +318,7 @@ public class Hl7Controller : TenantBaseController
         {
             // Error — re-run through processor
             var content = await System.IO.File.ReadAllTextAsync(req.Path);
-            var msg = Dx7Api.Services.Hl7.Hl7Parser.Parse(content);
+            var msg = Dx7Api.Services.Hl7.Hl7Parser.Parse(content, await GetSegmentIdsAsync());
             result = await _processor.ProcessAsync(msg, TenantId, content);
         }
 
@@ -349,7 +349,7 @@ public class Hl7Controller : TenantBaseController
             return Forbid();
 
         var raw    = await System.IO.File.ReadAllTextAsync(fullPath);
-        var msg    = Dx7Api.Services.Hl7.Hl7Parser.Parse(raw);
+        var msg    = Dx7Api.Services.Hl7.Hl7Parser.Parse(raw, await GetSegmentIdsAsync());
         var display = FormatHl7Display(raw);
         var fn     = Path.GetFileName(fullPath);
         var reason = fn.StartsWith("dup_") ? "duplicate" : "error";
@@ -448,7 +448,7 @@ public class Hl7Controller : TenantBaseController
 
         var filePath = candidates[0];
         var raw      = await System.IO.File.ReadAllTextAsync(filePath);
-        var msg      = Dx7Api.Services.Hl7.Hl7Parser.Parse(raw);
+        var msg      = Dx7Api.Services.Hl7.Hl7Parser.Parse(raw, await GetSegmentIdsAsync());
         var display  = FormatHl7Display(raw);
         var fn2      = Path.GetFileName(filePath);
         var folder   = Path.GetFileName(Path.GetDirectoryName(filePath)!);
@@ -516,6 +516,18 @@ public class Hl7Controller : TenantBaseController
     /// Formats raw HL7 for display — ensures each segment starts on a new line.
     /// Handles files where segments are separated by \r, \n, or no separator at all.
     /// </summary>
+    private string[]? _segmentIdsCache;
+    private async Task<string[]> GetSegmentIdsAsync()
+    {
+        if (_segmentIdsCache != null) return _segmentIdsCache;
+        _segmentIdsCache = await _db.RefData.AsNoTracking()
+            .Where(r => r.Category == "Hl7SegmentId" && r.IsActive)
+            .OrderBy(r => r.SortOrder)
+            .Select(r => r.Code)
+            .ToArrayAsync();
+        return _segmentIdsCache;
+    }
+
     private static string FormatHl7Display(string raw)
     {
         // Normalize existing line endings first

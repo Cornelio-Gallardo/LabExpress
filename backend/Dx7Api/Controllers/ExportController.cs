@@ -455,13 +455,12 @@ public class ExportController : TenantBaseController
             var dbUser = await _db.Users.FindAsync(CurrentUserId);
             resolvedClient = dbUser?.ClientId;
         }
-        if (!resolvedClient.HasValue) return BadRequest("Client context required");
 
-        // Load orders for requested patients within date range
+        // Load orders for requested patients — scope by client if available, otherwise tenant only
         var orders = await _db.Orders
             .Where(o => o.TenantId == TenantId
                      && req.PatientIds.Contains(o.PatientId)
-                     && o.ClientId == resolvedClient.Value)
+                     && (!resolvedClient.HasValue || o.ClientId == resolvedClient.Value))
             .ToListAsync();
 
         var orderMap = orders.ToDictionary(o => o.Id);

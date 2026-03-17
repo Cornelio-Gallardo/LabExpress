@@ -1,2 +1,29 @@
-backend/Dx7Api/bin/Debug/*.*
-backend/Dx7Api/HL7Inbox/*.*
+# .NET build artifacts
+backend/Dx7Api/bin/
+backend/Dx7Api/obj/
+
+# HL7 inbox files (runtime, not source)
+backend/Dx7Api/HL7Inbox/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Environment secrets
+.env
+.env.local
+*.env
+
+# IDE / tools
+.vs/
+*.user
+*.suo
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp / lock files
+*.tmp
+*.lock

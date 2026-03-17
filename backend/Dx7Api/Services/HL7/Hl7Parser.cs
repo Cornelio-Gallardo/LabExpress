@@ -6,15 +6,17 @@ namespace Dx7Api.Services.Hl7;
 /// </summary>
 public static class Hl7Parser
 {
-    public static Hl7Message Parse(string rawMessage)
+    public static Hl7Message Parse(string rawMessage, string[]? segmentIds = null)
     {
         // Normalize line endings: \r, \r\n, \n all become \n
         // Also handle files where segments have no newlines at all
         var normalized = rawMessage.Replace("\r\n", "\n").Replace("\r", "\n").Trim();
-        if (!normalized.Contains("\n"))
+        if (!normalized.Contains('\n'))
         {
-            var segIds = new[]{"MSH","PID","PV1","PV2","ORC","OBR","OBX","NTE","SPM","SAC","IN1"};
-            foreach (var s in segIds)
+            if (segmentIds is not { Length: > 0 })
+                throw new InvalidOperationException(
+                    "No Hl7SegmentId entries found in RefData. Ensure the database seed has run.");
+            foreach (var s in segmentIds)
                 normalized = System.Text.RegularExpressions.Regex.Replace(
                     normalized, $@"(?<!^)(?={s}\|)", "\n");
         }

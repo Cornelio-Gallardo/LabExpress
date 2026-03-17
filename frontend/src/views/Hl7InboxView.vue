@@ -393,10 +393,7 @@
           <input v-model="logSearch" class="form-input" style="width:220px; margin:0" placeholder="Search log..." />
           <select v-model="logStatusFilter" class="form-input" style="width:150px; margin:0">
             <option value="">All Status</option>
-            <option value="order_saved">Order Saved</option>
-            <option value="processed">Processed</option>
-            <option value="duplicate">Duplicate</option>
-            <option value="error">Error</option>
+            <option v-for="opt in hl7StatusOptions" :key="opt.code" :value="opt.code">{{ opt.label }}</option>
           </select>
         </div>
       </div>
@@ -507,7 +504,8 @@ const loadingLog = ref(false)
 const status     = ref({})
 const logEntries = ref([])
 const logSearch  = ref('')
-const logStatusFilter = ref('')
+const logStatusFilter  = ref('')
+const hl7StatusOptions = ref([])
 const page     = ref(1)
 const pageSize = ref(25)
 const selected = ref([])
@@ -747,7 +745,11 @@ async function deleteSelectedQuarantine() {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
+  try {
+    const { data } = await api.get('/refdata', { params: { category: 'Hl7Status' } })
+    hl7StatusOptions.value = data
+  } catch { /* non-fatal — hardcoded fallback already removed; dropdown just has "All Status" */ }
   load()
   loadQuarantine()
   autoRefresh = setInterval(() => { load(); loadQuarantine() }, 15000)

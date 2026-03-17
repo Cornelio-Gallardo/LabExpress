@@ -19,9 +19,9 @@
           </template>
           <!-- Longitudinal trends link -->
           <router-link v-if="session" :to="`/longitudinal/${session.patientId}`" class="btn btn-outline btn-sm">📊 Trends</router-link>
-          <button v-if="auth.canExport" class="btn-excel" @click="exportCsv">
+          <button v-if="auth.canExport" class="btn-excel" @click="exportExcel">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-            Export CSV
+            Export Excel
           </button>
           <button v-if="auth.canPrint" class="btn-pdf" @click="showPrintModal = true; printMode = 'download'">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>
@@ -243,18 +243,14 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, reactive } from 'vue'
+import { ref, computed, onMounted, reactive, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
-import { sessionsApi, resultsApi, notesApi, exportApi } from '../services/api'
-import { useDialog } from '../composables/useDialog'
-const dialog = useDialog()
+import { sessionsApi, resultsApi, notesApi } from '../services/api'
 
 const auth      = useAuthStore()
 const route     = useRoute()
 const router    = useRouter()
-const sessionId = route.params.sessionId
-
 // ── Roster context for Next/Prev navigation ────────────────────────────────
 // Pass ?roster=id1,id2,... from the launching view to enable prev/next
 const rosterIds  = computed(() => {
@@ -262,7 +258,7 @@ const rosterIds  = computed(() => {
   if (!r) return []
   return r.split(',').filter(Boolean)
 })
-const rosterIndex = computed(() => rosterIds.value.indexOf(sessionId))
+const rosterIndex = computed(() => rosterIds.value.indexOf(route.params.sessionId))
 
 function navRoster(delta) {
   const nextIdx = rosterIndex.value + delta
@@ -372,12 +368,12 @@ async function loadSession() {
   loading.value = true
   loadError.value = ''
   try {
-    const { data } = await sessionsApi.getById(sessionId)
+    const { data } = await sessionsApi.getById(route.params.sessionId)
     session.value = data
     if (session.value) {
       await Promise.all([
         resultsApi.getOrders(session.value.patientId).then(r => { orders.value = r.data }),
-        notesApi.getBySession(sessionId).then(r => { notes.value = r.data })
+        notesApi.getBySession(route.params.sessionId).then(r => { notes.value = r.data })
       ])
     }
   } catch (e) {
@@ -388,9 +384,9 @@ async function loadSession() {
 // ── Notes ─────────────────────────────────────────────────────────────────────
 async function saveNote() {
   if (!newNote.value.trim()) return
-  await notesApi.create({ sessionId, noteText: newNote.value })
+  await notesApi.create({ sessionId: route.params.sessionId, noteText: newNote.value })
   newNote.value = ''
-  const { data } = await notesApi.getBySession(sessionId)
+  const { data } = await notesApi.getBySession(route.params.sessionId)
   notes.value = data
 }
 function startEditNote(note) { editingNote.value = note.id; editNoteText.value = note.noteText }
@@ -400,20 +396,50 @@ async function updateNote(note) {
   editingNote.value = null
 }
 
-// ── Export CSV ────────────────────────────────────────────────────────────────
-async function exportCsv() {
-  if (!session.value) return
-  const todayStr = new Date().toISOString().split('T')[0]
-  const { data } = await exportApi.export({
-    patientIds: [session.value.patientId],
-    fromDate: '2024-01-01', toDate: todayStr,
-    testCodes: null, format: 'csv'
-  })
-  const url = URL.createObjectURL(new Blob([data]))
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `dx7_${session.value.patientName.replace(/ /g, '_')}.csv`
-  a.click(); URL.revokeObjectURL(url)
+// ── Export Excel (pivoted — matches the on-screen table layout) ───────────────
+function exportExcel() {
+  if (!session.value || !analyteRows.value.length) return
+
+  const cols = resultDates.value  // all dates, newest first
+  const esc  = v => `"${String(v ?? '').replace(/"/g, '""')}"`
+
+  const rows = []
+
+  // Header rows
+  rows.push(['Patient',   session.value.patientName].map(esc).join(','))
+  rows.push(['Session',   session.value.sessionDate + '  Shift ' + session.value.shiftNumber + (session.value.chair ? '  Chair ' + session.value.chair : '')].map(esc).join(','))
+  rows.push([])
+
+  // Table header: Analyte | Unit | Ref Range | [date (accession)…]
+  const headerCols = ['Analyte', 'Unit', 'Ref Range', ...cols.map(c => `${c.date}\n${c.accession}`)]
+  rows.push(headerCols.map(esc).join(','))
+
+  // Data rows grouped by panel
+  for (const group of groupedRows.value) {
+    rows.push([esc(group.label)].join(','))   // panel separator
+    for (const row of group.analytes) {
+      const cells = [
+        row.displayName,
+        row.unit || '',
+        row.refRange || '',
+        ...cols.map(c => {
+          const cell = row.byDate[c.date]
+          if (!cell) return ''
+          return cell.flag && cell.flag !== 'N' ? `${cell.value} ${cell.flag}` : cell.value
+        })
+      ]
+      rows.push(cells.map(esc).join(','))
+    }
+  }
+
+  const csv  = rows.map(r => Array.isArray(r) ? '' : r).join('\r\n')
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href     = url
+  a.download = `DX7_${session.value.patientName.replace(/[^a-zA-Z0-9]/g, '_')}_${session.value.sessionDate}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 // ── Print / PDF ───────────────────────────────────────────────────────────────
@@ -491,6 +517,7 @@ async function downloadPdf() {
 }
 
 onMounted(loadSession)
+watch(() => route.params.sessionId, loadSession)
 </script>
 
 <style scoped>

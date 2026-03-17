@@ -82,7 +82,7 @@ public static class DbSeeder
             new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "BUNPOS",  AnalyteCode = "SXA_A_BUN_POST", IsActive = true }, // HCLAB alias
             new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "URR",     AnalyteCode = "SXA_A_URR",      IsActive = true },
             new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "KT/V",    AnalyteCode = "SXA_A_KTV",      IsActive = true },
-            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "CREA",    AnalyteCode = "SXA_A_CREAT",    IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "CREA",    AnalyteCode = "SXA_A_CREA",     IsActive = true },
             new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "ALB",     AnalyteCode = "SXA_A_ALB",      IsActive = true },
             new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "ALKP",    AnalyteCode = "SXA_A_ALKP",     IsActive = true },
             new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "UA",      AnalyteCode = "SXA_A_UA",       IsActive = true },
@@ -90,7 +90,7 @@ public static class DbSeeder
             new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "NA",      AnalyteCode = "SXA_A_NA",       IsActive = true },
             new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "K",       AnalyteCode = "SXA_A_K",        IsActive = true },
             new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "ICAL",    AnalyteCode = "SXA_A_ICAL",     IsActive = true },
-            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "FBS",     AnalyteCode = "SXA_A_GLU",      IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "FBS",     AnalyteCode = "SXA_A_FBS",      IsActive = true },
             new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "ALT",     AnalyteCode = "SXA_A_ALT",      IsActive = true },
             new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "HBA1C",   AnalyteCode = "SXA_A_HBA1C",    IsActive = true },
             // Lipid panel

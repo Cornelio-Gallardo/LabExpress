@@ -174,6 +174,11 @@ public class ResultValue
     public string? ReferenceRangeRaw { get; set; }                // raw string for display
     [MaxLength(5)] public string? AbnormalFlag { get; set; }      // OBX-8 raw pass-through only
     public string? RawHl7Segment { get; set; }                    // complete OBX — traceability
+    // CDM Amendment 1 §10.4 — special value flags
+    public bool NoSpecimen    { get; set; } = false;              // OBX-5 was '*'  — no specimen received
+    public bool NotCalculated { get; set; } = false;              // OBX-5 was '---' — calculated field indeterminate
+    // CDM Amendment 1 §11.2 — schema version for ingestion traceability
+    [MaxLength(30)] public string SchemaVersion { get; set; } = "DX7_CDM_1.0_A1";
     [ForeignKey("ResultHeaderId")] public ResultHeader ResultHeader { get; set; } = null!;
     [ForeignKey("TenantId")]       public Tenant       Tenant      { get; set; } = null!;
     [ForeignKey("AnalyteCode")]    public SxaAnalyte?  Analyte     { get; set; }
@@ -350,6 +355,21 @@ public class LabNote
     public int SortOrder { get; set; } = 0;
     [ForeignKey("TenantId")]       public Tenant       Tenant       { get; set; } = null!;
     [ForeignKey("ResultHeaderId")] public ResultHeader ResultHeader { get; set; } = null!;
+}
+
+// ── RefData (system-level reference / lookup values) ─────────────────────────
+// Stores all status codes, flag values, and label strings that would otherwise
+// be hardcoded throughout the codebase. Categories: Hl7Status, ResultStatus,
+// AbnormalFlag, Gender, AuditAction, OBXSkipKeyword, UserStatus.
+public class RefData
+{
+    [Key] public Guid Id { get; set; } = Guid.NewGuid();
+    [Required, MaxLength(50)]  public string Category  { get; set; } = ""; // Hl7Status, ResultStatus, …
+    [Required, MaxLength(50)]  public string Code      { get; set; } = ""; // processed, error, H, L, …
+    [Required, MaxLength(100)] public string Label     { get; set; } = ""; // "Processed", "High", …
+    public string? Description { get; set; }
+    public int     SortOrder   { get; set; } = 0;
+    public bool    IsActive    { get; set; } = true;
 }
 
 // ── ShiftNurseAssignment ──────────────────────────────────────────────────────

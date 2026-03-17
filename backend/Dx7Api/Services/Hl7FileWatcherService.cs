@@ -133,11 +133,17 @@ public class Hl7FileWatcherService : BackgroundService
         Hl7ProcessResult result;
         try
         {
-            var msg = Hl7Parser.Parse(rawContent);
-
             using var scope  = _scopeFactory.CreateScope();
             var db     = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var logger = scope.ServiceProvider.GetRequiredService<ILogger<Hl7Processor>>();
+
+            var segmentIds = await db.RefData.AsNoTracking()
+                .Where(r => r.Category == "Hl7SegmentId" && r.IsActive)
+                .OrderBy(r => r.SortOrder)
+                .Select(r => r.Code)
+                .ToArrayAsync(ct);
+
+            var msg = Hl7Parser.Parse(rawContent, segmentIds.Length > 0 ? segmentIds : null);
 
             var tenant = await db.Tenants.FirstOrDefaultAsync(t =>
                 t.Code == tenantSlug || t.Name.ToLower() == tenantSlug.ToLower(), ct)
