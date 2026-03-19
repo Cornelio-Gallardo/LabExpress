@@ -18,7 +18,7 @@
     </div>
 
     <!-- Shift cards -->
-    <div v-if="loadingShifts" class="loading">Loading shifts…</div>
+    <LoadingSpinner v-if="loadingShifts" message="Loading shifts…" />
 
     <div v-else-if="schedules.length === 0" class="empty-state">
       <div class="empty-icon">📅</div>
@@ -79,7 +79,7 @@
         </button>
       </div>
 
-      <div v-if="loadingSessions" class="loading">Loading roster…</div>
+      <LoadingSpinner v-if="loadingSessions" message="Loading roster…" />
 
       <div v-else-if="sessions.length === 0" class="empty-state" style="padding:32px 0">
         <div class="empty-icon">🏥</div>
@@ -157,6 +157,7 @@
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { useAuthStore } from '../store/auth'
 import { sessionsApi, shiftsApi } from '../services/api'
+import LoadingSpinner from '../components/LoadingSpinner.vue'
 import api from '../services/api'
 import { useRouter } from 'vue-router'
 

@@ -32,9 +32,10 @@ export const authApi = {
 
 // ── Patients ─────────────────────────────────────────────────────────────────
 export const patientsApi = {
-  getAll: (params) => api.get('/patients', { params }),
-  getById: (id) => api.get(`/patients/${id}`),
-  create: (data) => api.post('/patients', data),
+  getAll:     (params) => api.get('/patients', { params }),
+  getSummary: (params) => api.get('/patients/summary', { params }),
+  getById:    (id) => api.get(`/patients/${id}`),
+  create:     (data) => api.post('/patients', data),
   deactivate: (id) => api.delete(`/patients/${id}`)
 }
 

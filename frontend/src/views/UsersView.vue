@@ -23,14 +23,19 @@
           <option value="active">Active</option>
           <option value="inactive">Inactive</option>
         </select>
-        <div class="text-slate text-sm" style="margin-left:auto; align-self:center">
-          {{ filtered.length }} user{{ filtered.length !== 1 ? 's' : '' }}
+        <div style="display:flex; align-items:center; gap:8px; margin-left:auto">
+          <span class="text-slate text-sm">Rows:</span>
+          <select class="page-size-select" v-model="pageSize" style="height:28px; padding:0 6px; border:1px solid var(--border); border-radius:6px; font-size:12px; color:var(--slate)">
+            <option :value="25">25</option>
+            <option :value="50">50</option>
+            <option :value="100">100</option>
+          </select>
         </div>
       </div>
     </div>
 
     <!-- Users table -->
-    <div v-if="loading" class="loading">Loading users…</div>
+    <LoadingSpinner v-if="loading" message="Loading users…" />
     <div v-else class="card">
       <div v-if="selectedUsers.length" class="bulk-bar">
         <span class="bulk-count">{{ selectedUsers.length }} selected</span>
@@ -51,7 +56,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="u in filtered" :key="u.id">
+            <tr v-for="u in users" :key="u.id">
               <td style="text-align:center"><input type="checkbox" :value="u.id" v-model="selectedUsers" class="row-check" /></td>
               <td>
                 <div class="user-avatar-row">
@@ -95,14 +100,19 @@
                 </div>
               </td>
             </tr>
-            <tr v-if="filtered.length === 0">
+            <tr v-if="users.length === 0">
               <td colspan="7" style="text-align:center; padding:32px; color:var(--slate)">No users found</td>
             </tr>
           </tbody>
           </table>
         </div>
-        <div class="table-footer">
-          <span>Showing {{ filtered.length }} of {{ users.length }} user{{ users.length !== 1 ? 's' : '' }}</span>
+        <div class="table-footer" style="display:flex; align-items:center; justify-content:space-between">
+          <span>{{ total }} user{{ total !== 1 ? 's' : '' }} total</span>
+          <div v-if="totalPages > 1" class="pagination-wrap">
+            <button class="page-btn" :disabled="page === 1" @click="page--">‹</button>
+            <span class="page-info">{{ page }} / {{ totalPages }}</span>
+            <button class="page-btn" :disabled="page >= totalPages" @click="page++">›</button>
+          </div>
         </div>
       </div>
     </div>
@@ -206,18 +216,23 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, reactive } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, reactive } from 'vue'
 import { useAuthStore } from '../store/auth'
 import api, { usersApi } from '../services/api'
+import LoadingSpinner from '../components/LoadingSpinner.vue'
 import { useDialog } from '../composables/useDialog'
 const dialog = useDialog()
 
-const auth = useAuthStore()
-const users = ref([])
-const loading = ref(false)
-const search = ref('')
-const roleFilter = ref('')
+const auth        = useAuthStore()
+const users       = ref([])
+const loading     = ref(false)
+const search      = ref('')
+const roleFilter  = ref('')
 const statusFilter = ref('')
+const page        = ref(1)
+const pageSize    = ref(25)
+const total       = ref(0)
+const totalPages  = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
 const showModal = ref(false)
 const editingUser = ref(null)
 const saving = ref(false)
@@ -258,24 +273,12 @@ const availableRoles = computed(() =>
     : allRoles.value
 )
 
-const filtered = computed(() =>
-  users.value.filter(u => {
-    const s = search.value.toLowerCase()
-    const matchSearch = !s || u.name.toLowerCase().includes(s) || u.email.toLowerCase().includes(s)
-    const matchRole = !roleFilter.value || u.role === roleFilter.value
-    const matchStatus = !statusFilter.value ||
-      (statusFilter.value === 'active' && u.isActive) ||
-      (statusFilter.value === 'inactive' && !u.isActive)
-    return matchSearch && matchRole && matchStatus
-  })
-)
-
-const selectedUsers = ref([])
+const selectedUsers    = ref([])
 const allUsersSelected = computed(() =>
-  filtered.value.length > 0 && filtered.value.every(u => selectedUsers.value.includes(u.id))
+  users.value.length > 0 && users.value.every(u => selectedUsers.value.includes(u.id))
 )
 function toggleSelectAllUsers(evt) {
-  selectedUsers.value = evt.target.checked ? filtered.value.map(u => u.id) : []
+  selectedUsers.value = evt.target.checked ? users.value.map(u => u.id) : []
 }
 
 function triggerAvatarUpload(user) {
@@ -342,11 +345,28 @@ async function loadClinics() {
 
 async function load() {
   loading.value = true
+  selectedUsers.value = []
   try {
-    const { data } = await api.get('/users')
-    users.value = data
+    const { data } = await api.get('/users', { params: {
+      search:   search.value     || undefined,
+      role:     roleFilter.value || undefined,
+      status:   statusFilter.value || undefined,
+      page:     page.value,
+      pageSize: pageSize.value
+    }})
+    users.value = data.data
+    total.value = data.total
   } finally { loading.value = false }
 }
+
+let searchTimer = null
+watch(search, () => {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => { page.value = 1; load() }, 300)
+})
+watch([roleFilter, statusFilter], () => { page.value = 1; load() })
+watch([page, pageSize], load)
+onUnmounted(() => clearTimeout(searchTimer))
 
 function openCreate() {
   editingUser.value = null
@@ -457,6 +477,11 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.pagination-wrap { display:flex; align-items:center; gap:6px; }
+.page-btn        { width:28px; height:28px; border:1px solid var(--border); border-radius:6px; background:white; cursor:pointer; font-size:14px; display:flex; align-items:center; justify-content:center; }
+.page-btn:disabled { opacity:0.4; cursor:not-allowed; }
+.page-btn:not(:disabled):hover { background:var(--teal); color:white; border-color:var(--teal); }
+.page-info       { font-size:13px; color:var(--slate); min-width:48px; text-align:center; }
 .bulk-bar { display:flex; align-items:center; gap:10px; padding:8px 16px; background:#fef9c3; border-bottom:1px solid #fde68a; font-size:13px; }
 .bulk-count { font-weight:600; color:#92400e; }
 .row-check { width:15px; height:15px; cursor:pointer; }

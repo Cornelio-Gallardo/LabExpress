@@ -66,8 +66,26 @@
           <div class="card-title">🔴Quarantine</div>
           <div class="card-subtitle">Errored and duplicate HL7 files — review and action</div>
         </div>
+        <button v-if="quarantineFiles.filter(f => f.reason !== 'duplicate').length"
+          class="btn btn-primary btn-sm" :disabled="reprocessingAll" @click="reprocessAll">
+          {{ reprocessingAll ? 'Reprocessing…' : `↺ Reprocess All (${quarantineFiles.filter(f => f.reason !== 'duplicate').length})` }}
+        </button>
       </div>
-      <div v-if="!quarantineFiles.length" class="empty-state" style="padding:24px">
+      <!-- Reprocess-all loading overlay -->
+      <div v-if="reprocessingAll" class="reprocess-overlay">
+        <div class="reprocess-spinner"></div>
+        <div class="reprocess-overlay-title">Reprocessing files…</div>
+        <div class="reprocess-overlay-sub">
+          {{ reprocessProgress.current }} of {{ reprocessProgress.total }} file(s) processed
+        </div>
+        <div class="reprocess-progress-track">
+          <div class="reprocess-progress-fill"
+            :style="{ width: reprocessProgress.total ? (reprocessProgress.current / reprocessProgress.total * 100) + '%' : '0%' }">
+          </div>
+        </div>
+      </div>
+
+      <div v-else-if="!quarantineFiles.length" class="empty-state" style="padding:24px">
         <div class="empty-icon"></div>
         <div class="empty-title">No quarantined files</div>
       </div>
@@ -80,6 +98,17 @@
           </button>
           <button class="btn btn-outline btn-sm" @click="selectedQuarantine = []">✕ Deselect</button>
         </div>
+        <div class="table-toolbar" style="display:flex; align-items:center; justify-content:space-between; padding:8px 16px; border-bottom:1px solid var(--border-light)">
+          <span class="text-sm text-slate">{{ quarantineFiles.length }} file(s) total</span>
+          <div style="display:flex; align-items:center; gap:8px">
+            <span class="text-sm text-slate">Rows:</span>
+            <select class="page-size-select" v-model="qPageSize" @change="qPage=1">
+              <option :value="25">25</option>
+              <option :value="50">50</option>
+              <option :value="100">100</option>
+            </select>
+          </div>
+        </div>
         <div class="table-wrap">
           <table>
             <thead>
@@ -91,7 +120,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="f in quarantineFiles" :key="f.path" :class="{ 'row-reviewing': reviewFile?.path === f.path }">
+              <tr v-for="f in pagedQuarantine" :key="f.path" :class="{ 'row-reviewing': reviewFile?.path === f.path }">
                 <td style="text-align:center">
                   <input type="checkbox" :value="f.path" v-model="selectedQuarantine" class="row-check" />
                 </td>
@@ -109,7 +138,8 @@
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                     </button>
                     <button class="action-btn reprocess" :title="f.reason === 'duplicate' ? 'Acknowledge' : 'Reprocess'" :disabled="reprocessingPath===f.path" @click="reprocess(f)">
-                      <svg v-if="f.reason === 'duplicate'" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                      <span v-if="reprocessingPath===f.path" class="btn-spinner"></span>
+                      <svg v-else-if="f.reason === 'duplicate'" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                       <svg v-else width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.12"/></svg>
                     </button>
                     <button class="action-btn delete" title="Delete" :disabled="deletingPath===f.path" @click="deleteQuarantine(f)">
@@ -120,6 +150,11 @@
               </tr>
             </tbody>
           </table>
+        </div>
+        <div v-if="qTotalPages > 1" class="pagination-wrap" style="padding:10px 16px; border-top:1px solid var(--border-light)">
+          <button class="page-btn" :disabled="qPage === 1" @click="qPage--">‹</button>
+          <span class="page-info">{{ qPage }} / {{ qTotalPages }}</span>
+          <button class="page-btn" :disabled="qPage >= qTotalPages" @click="qPage++">›</button>
         </div>
       </div>
     </div>
@@ -139,9 +174,7 @@
             </div>
           </div>
 
-          <div v-if="reviewLoading" style="display:flex; align-items:center; justify-content:center; padding:48px">
-            <span class="text-slate">Loading file…</span>
-          </div>
+          <LoadingSpinner v-if="reviewLoading" message="Loading file…" />
 
           <div v-else-if="reviewData" class="review-body">
             <!-- Error banner -->
@@ -254,9 +287,7 @@
             </div>
           </div>
 
-          <div v-if="logReviewLoading" style="display:flex; align-items:center; justify-content:center; padding:48px">
-            <span class="text-slate">Loading file…</span>
-          </div>
+          <LoadingSpinner v-if="logReviewLoading" message="Loading file…" />
 
           <div v-else class="review-body">
             <!-- Error banner -->
@@ -399,7 +430,7 @@
       </div>
 
       <template v-if="loadingLog">
-        <div class="loading">Loading log...</div>
+        <LoadingSpinner message="Loading log…" />
       </template>
       <template v-else-if="filteredLog.length === 0">
         <div class="empty-state">
@@ -495,6 +526,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import api from '../services/api'
 import { useAuthStore } from '../store/auth'
+import LoadingSpinner from '../components/LoadingSpinner.vue'
 import { useDialog } from '../composables/useDialog'
 const dialog = useDialog()
 const auth = useAuthStore()
@@ -513,7 +545,11 @@ let autoRefresh  = null
 const showQuarantine   = ref(false)
 const quarantineFiles  = ref([])
 const reprocessingPath = ref(null)
+const reprocessingAll  = ref(false)
+const reprocessProgress = ref({ current: 0, total: 0 })
 const deletingPath     = ref(null)
+const qPage     = ref(1)
+const qPageSize = ref(25)
 const selectedQuarantine     = ref([])
 const bulkDeletingQuarantine = ref(false)
 const reviewFile             = ref(null)
@@ -549,6 +585,14 @@ const pagedLog = computed(() => {
 // Reset to page 1 when filter/search changes
 function resetPage() { page.value = 1 }
 watch([logSearch, logStatusFilter, pageSize], resetPage)
+
+// Quarantine pagination
+const qTotalPages   = computed(() => Math.max(1, Math.ceil(quarantineFiles.value.length / qPageSize.value)))
+const pagedQuarantine = computed(() => {
+  const start = (qPage.value - 1) * qPageSize.value
+  return quarantineFiles.value.slice(start, start + qPageSize.value)
+})
+watch(quarantineFiles, () => { qPage.value = 1 })
 
 async function load() {
   loading.value = true
@@ -642,6 +686,30 @@ async function loadQuarantine() {
     const { data } = await api.get('/hl7/quarantine')
     quarantineFiles.value = data.files || []
   } catch {}
+}
+
+async function reprocessAll() {
+  const toProcess = quarantineFiles.value.filter(f => f.reason !== 'duplicate')
+  if (!toProcess.length) return
+  reprocessingAll.value = true
+  reprocessProgress.value = { current: 0, total: toProcess.length }
+  let succeeded = 0, failed = 0
+  for (const file of toProcess) {
+    try {
+      const { data } = await api.post('/hl7/quarantine/reprocess', { path: file.path })
+      if (data.status !== 'error') {
+        quarantineFiles.value = quarantineFiles.value.filter(f => f.path !== file.path)
+        succeeded++
+      } else {
+        failed++
+      }
+    } catch { failed++ }
+    reprocessProgress.value.current++
+  }
+  reprocessingAll.value = false
+  reprocessProgress.value = { current: 0, total: 0 }
+  await load()
+  await dialog.alert(`Done: ${succeeded} reprocessed, ${failed} still failed.`, 'Reprocess All Complete')
 }
 
 async function reprocess(file) {
@@ -857,6 +925,16 @@ onUnmounted(() => clearInterval(autoRefresh))
 .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* Error / dupe banners in review panel */
+/* Reprocess-all loading overlay */
+.reprocess-overlay       { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:48px 24px; gap:16px; }
+.reprocess-overlay-title { font-size:15px; font-weight:700; color:var(--text); }
+.reprocess-overlay-sub   { font-size:13px; color:var(--slate); text-align:center; max-width:340px; line-height:1.5; }
+.reprocess-progress-track { width:280px; height:8px; background:var(--border); border-radius:99px; overflow:hidden; }
+.reprocess-progress-fill  { height:100%; background:var(--primary, #3b82f6); border-radius:99px; transition:width 0.2s ease; }
+.reprocess-spinner { width:40px; height:40px; border:4px solid var(--border); border-top-color:var(--primary); border-radius:50%; animation:spin 0.8s linear infinite; }
+.btn-spinner { display:inline-block; width:13px; height:13px; border:2px solid currentColor; border-top-color:transparent; border-radius:50%; animation:spin 0.7s linear infinite; vertical-align:middle; }
+@keyframes spin { to { transform:rotate(360deg); } }
+
 .error-banner  { display:flex; gap:12px; align-items:flex-start; background:#fef2f2; border:1.5px solid #fca5a5; border-radius:8px; padding:12px 16px; margin-bottom:18px; }
 .dupe-banner   { display:flex; gap:12px; align-items:flex-start; background:#fefce8; border:1.5px solid #fde047; border-radius:8px; padding:12px 16px; margin-bottom:18px; }
 .error-banner-icon  { font-size:20px; line-height:1; flex-shrink:0; }

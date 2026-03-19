@@ -205,7 +205,13 @@ using (var scope = app.Services.CreateScope())
                 ('SXA_TEST_BUN_POST', 'Blood Urea Nitrogen (Post-Dialysis)', 'Chemistry',  'SINGLE', true),
                 ('SXA_TEST_LIPID',    'Lipid Panel',                         'Chemistry',  'PANEL',  true),
                 ('SXA_TEST_K',        'Potassium',                           'Chemistry',  'SINGLE', true),
-                ('SXA_TEST_MULTI',    'Multi-Panel (Fallback)',               'Chemistry',  'PANEL',  true)
+                ('SXA_TEST_MULTI',    'Multi-Panel (Fallback)',               'Chemistry',  'PANEL',  true),
+                ('SXA_TEST_CREA',     'Creatinine',                          'Chemistry',  'SINGLE', true),
+                ('SXA_TEST_DDIMER',   'D-Dimer',                             'Hematology', 'SINGLE', true),
+                ('SXA_TEST_BILI',     'Bilirubin',                           'Chemistry',  'PANEL',  true),
+                ('SXA_TEST_FER',      'Ferritin',                            'Chemistry',  'SINGLE', true),
+                ('SXA_TEST_TFT',      'Thyroid Function Test',               'Chemistry',  'PANEL',  true),
+                ('SXA_TEST_URINE',    'Urinalysis',                          'Urinalysis', 'PANEL',  true)
             ON CONFLICT ("SxaTestId") DO NOTHING;
 
             INSERT INTO "SxaAnalytes" ("AnalyteCode", "DisplayName", "DefaultUnit", "ResultType")
@@ -264,10 +270,19 @@ using (var scope = app.Services.CreateScope())
                 ('DGC0074', 'SXA_TEST_CBC'),
                 ('CBC',     'SXA_TEST_CBC'),
                 ('DGC0035', 'SXA_TEST_FBS'),
+                ('FBS',     'SXA_TEST_FBS'),
                 ('K',       'SXA_TEST_K'),
                 ('LIPID',   'SXA_TEST_LIPID'),
                 ('CHEM',    'SXA_TEST_CHEM'),
-                ('MULTI',   'SXA_TEST_MULTI')
+                ('MULTI',   'SXA_TEST_MULTI'),
+                ('CREA',    'SXA_TEST_CREA'),
+                ('DDIMER',  'SXA_TEST_DDIMER'),
+                ('BILI P',  'SXA_TEST_BILI'),
+                ('BILI',    'SXA_TEST_BILI'),
+                ('FER',     'SXA_TEST_FER'),
+                ('TFT-BF',  'SXA_TEST_TFT'),
+                ('TFT',     'SXA_TEST_TFT'),
+                ('URINE',   'SXA_TEST_URINE')
             ) AS codes("Code", "SxaId")
             WHERE NOT EXISTS (
                 SELECT 1 FROM "TenantTestMaps" m

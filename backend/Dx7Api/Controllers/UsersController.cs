@@ -15,10 +15,19 @@ public class UsersController : TenantBaseController
     public UsersController(AppDbContext db, IWebHostEnvironment env) { _db = db; _env = env; }
 
     [HttpGet]
-    public async Task<IActionResult> GetAll([FromQuery] Guid? clientId)
+    public async Task<IActionResult> GetAll(
+        [FromQuery] Guid?   clientId,
+        [FromQuery] string? search,
+        [FromQuery] string? role,
+        [FromQuery] string? status,
+        [FromQuery] int     page     = 1,
+        [FromQuery] int     pageSize = 25)
     {
         if (!IsPlAdmin && !IsClinicAdmin)
             return Forbid();
+
+        page     = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
 
         var query = _db.Users
             .Include(u => u.Client)
@@ -30,14 +39,40 @@ public class UsersController : TenantBaseController
         if (clientId.HasValue && IsPlAdmin)
             query = query.Where(u => u.ClientId == clientId.Value);
 
-        var users = await query.OrderBy(u => u.Name).ToListAsync();
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim().ToLower();
+            query = query.Where(u => u.Name.ToLower().Contains(s) || u.Email.ToLower().Contains(s));
+        }
 
-        return Ok(users.Select(u => new UserDetailDto(
-            u.Id, u.Name, u.Email, u.Role.ToString(),
-            u.TenantId, u.ClientId,
-            u.Client == null ? null : u.Client.Name,
-            u.IsActive, u.CreatedAt, u.AvatarUrl
-        )));
+        if (!string.IsNullOrWhiteSpace(role))
+            query = query.Where(u => u.Role.ToString() == role);
+
+        if (status == "active")
+            query = query.Where(u => u.IsActive);
+        else if (status == "inactive")
+            query = query.Where(u => !u.IsActive);
+
+        var total = await query.CountAsync();
+
+        var users = await query
+            .OrderBy(u => u.Name)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        return Ok(new
+        {
+            data = users.Select(u => new UserDetailDto(
+                u.Id, u.Name, u.Email, u.Role.ToString(),
+                u.TenantId, u.ClientId,
+                u.Client == null ? null : u.Client.Name,
+                u.IsActive, u.CreatedAt, u.AvatarUrl
+            )),
+            total,
+            page,
+            pageSize
+        });
     }
 
     [HttpGet("{id}")]

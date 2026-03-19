@@ -16,7 +16,7 @@
         </select>
       </div>
 
-      <div v-if="loadingPicker" class="loading">Loading shifts…</div>
+      <LoadingSpinner v-if="loadingPicker" message="Loading shifts…" />
 
       <div v-else-if="pickerShifts.length === 0" class="empty-state">
         <div class="empty-icon">📅</div>
@@ -82,7 +82,7 @@
         </div>
       </div>
 
-      <div v-if="loading" class="loading">Loading patients…</div>
+      <LoadingSpinner v-if="loading" message="Loading patients…" />
 
       <div v-else-if="filtered.length === 0" class="empty-state">
         <div class="empty-icon">👤</div>
@@ -198,6 +198,7 @@
 import { ref, computed, reactive, onMounted } from 'vue'
 import { useAuthStore } from '../store/auth'
 import { patientsApi, sessionsApi, shiftsApi } from '../services/api'
+import LoadingSpinner from '../components/LoadingSpinner.vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useDialog } from '../composables/useDialog'
 const dialog = useDialog()
@@ -332,7 +333,7 @@ async function loadRoster() {
       patientsApi.getAll(params),
       sessionsApi.getAll({ shift: shiftNum.value, date: shiftDate.value, ...(cid ? { clientId: cid } : {}) })
     ])
-    patients.value = pRes.data
+    patients.value = pRes.data.data ?? pRes.data
     inShift.value  = new Set(sRes.data.map(s => s.patientId))
   } finally { loading.value = false }
 }

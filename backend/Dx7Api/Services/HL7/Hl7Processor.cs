@@ -218,7 +218,7 @@ public class Hl7Processor(AppDbContext db, ILogger<Hl7Processor> logger)
 
                     // §10.2 — classify special value patterns before analyte map lookup
                     bool noSpecimen    = cleanValue == "*";
-                    bool notCalculated = cleanValue == "---";
+                    bool notCalculated = cleanValue.Length > 0 && cleanValue.All(c => c == '-');
 
                     // §10.3.1 — unknown non-numeric: quarantine ENTIRE message, stop processing
                     if (!noSpecimen && !notCalculated)

@@ -16,28 +16,28 @@
       <div class="stat-card">
         <div class="stat-icon">👥</div>
         <div class="stat-body">
-          <div class="stat-value">{{ patients.length }}</div>
+          <div class="stat-value">{{ summary.total }}</div>
           <div class="stat-label">Total Patients</div>
         </div>
       </div>
       <div class="stat-card">
         <div class="stat-icon" style="color:var(--green)">✅</div>
         <div class="stat-body">
-          <div class="stat-value" style="color:var(--green)">{{ patients.filter(p => p.resultStatus === 'ready').length }}</div>
+          <div class="stat-value" style="color:var(--green)">{{ summary.ready }}</div>
           <div class="stat-label">With Recent Results</div>
         </div>
       </div>
       <div class="stat-card">
         <div class="stat-icon" style="color:var(--gold)">⚠</div>
         <div class="stat-body">
-          <div class="stat-value" style="color:var(--gold)">{{ patients.filter(p => p.resultStatus === 'stale').length }}</div>
+          <div class="stat-value" style="color:var(--gold)">{{ summary.stale }}</div>
           <div class="stat-label">Stale Results</div>
         </div>
       </div>
       <div class="stat-card">
         <div class="stat-icon" style="color:var(--slate)">○</div>
         <div class="stat-body">
-          <div class="stat-value" style="color:var(--slate)">{{ patients.filter(p => p.resultStatus === 'nodata').length }}</div>
+          <div class="stat-value" style="color:var(--slate)">{{ summary.noData }}</div>
           <div class="stat-label">No Results</div>
         </div>
       </div>
@@ -53,14 +53,19 @@
           <option value="stale">Stale</option>
           <option value="nodata">No Data</option>
         </select>
-        <div class="text-slate text-sm" style="margin-left:auto">
-          Showing {{ filtered.length }} of {{ patients.length }} patients
+        <div style="display:flex; align-items:center; gap:8px; margin-left:auto">
+          <span class="text-slate text-sm">Rows:</span>
+          <select class="page-size-select" v-model="pageSize">
+            <option :value="25">25</option>
+            <option :value="50">50</option>
+            <option :value="100">100</option>
+          </select>
         </div>
       </div>
     </div>
 
     <!-- Patients table -->
-    <div v-if="loading" class="loading">Loading patients...</div>
+    <LoadingSpinner v-if="loading" message="Loading patients…" />
     <div v-else class="card">
       <div v-if="selectedPatients.length" class="bulk-bar">
         <span class="bulk-count">{{ selectedPatients.length }} selected</span>
@@ -84,7 +89,7 @@
             </tr>
           </thead>
           <tbody>
-            <template v-for="p in filtered" :key="p.id">
+            <template v-for="p in patients" :key="p.id">
               <!-- Patient row -->
               <tr class="patient-row">
                 <td style="text-align:center"><input type="checkbox" :value="p.id" v-model="selectedPatients" class="row-check" /></td>
@@ -128,16 +133,21 @@
               </tr>
             </template>
 
-            <tr v-if="filtered.length === 0">
+            <tr v-if="patients.length === 0">
               <td :colspan="auth.isAdmin ? 11 : 10" style="text-align:center; padding:40px; color:var(--slate)">No patients found</td>
             </tr>
           </tbody>
         </table>
       </div>
 
-      <!-- Pagination info -->
-      <div style="padding:12px 20px; border-top:1px solid var(--border); display:flex; align-items:center; justify-content:space-between">
-        <div class="text-slate text-sm">Page 1 of 1 · Showing {{ filtered.length }} of {{ patients.length }} records</div>
+      <!-- Pagination -->
+      <div style="padding:10px 20px; border-top:1px solid var(--border); display:flex; align-items:center; justify-content:space-between">
+        <span class="text-slate text-sm">{{ total }} patient{{ total !== 1 ? 's' : '' }} total</span>
+        <div v-if="totalPages > 1" class="pagination-wrap">
+          <button class="page-btn" :disabled="page === 1" @click="page--">‹</button>
+          <span class="page-info">{{ page }} / {{ totalPages }}</span>
+          <button class="page-btn" :disabled="page >= totalPages" @click="page++">›</button>
+        </div>
       </div>
     </div>
 
@@ -205,61 +215,105 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import ResultReportModal from '../components/ResultReportModal.vue'
+import LoadingSpinner from '../components/LoadingSpinner.vue'
 import { useAuthStore } from '../store/auth'
 import { useDialog } from '../composables/useDialog'
 const dialog = useDialog()
 import { patientsApi } from '../services/api'
 import api from '../services/api'
 
-const auth = useAuthStore()
+const auth    = useAuthStore()
 const patients = ref([])
-const search = ref('')
+const loading  = ref(false)
+
+// ── Filters & pagination (all server-side) ────────────────────────────────
+const search       = ref('')
 const statusFilter = ref('')
-const loading = ref(false)
-const showAdd = ref(false)
-const showReport = ref(false)
-const reportPatient = ref(null)
-const reportResults = ref([])
-const loadingReport = ref(false)
+const page         = ref(1)
+const pageSize     = ref(25)
+const total        = ref(0)
+const totalPages   = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
+
+// ── Summary stats (separate fast endpoint for the stat cards) ────────────
+const summary = ref({ total: 0, ready: 0, stale: 0, noData: 0 })
+
+// ── Modals ────────────────────────────────────────────────────────────────
+const showAdd        = ref(false)
+const showReport     = ref(false)
+const reportPatient  = ref(null)
+const reportResults  = ref([])
+const loadingReport  = ref(false)
 const newP = ref({ name: '', lisPatientId: '', philhealthNo: '', birthdate: '', gender: '', contactNumber: '' })
 
-const filtered = computed(() =>
-  patients.value.filter(p => {
-    const s = search.value.toLowerCase()
-    return (!s || p.name.toLowerCase().includes(s) || (p.lisPatientId || '').toLowerCase().includes(s))
-      && (!statusFilter.value || p.resultStatus === statusFilter.value)
-  })
-)
-
-const selectedPatients = ref([])
+// ── Selection (current page only) ────────────────────────────────────────
+const selectedPatients    = ref([])
 const allPatientsSelected = computed(() =>
-  filtered.value.length > 0 && filtered.value.every(p => selectedPatients.value.includes(p.id))
+  patients.value.length > 0 && patients.value.every(p => selectedPatients.value.includes(p.id))
 )
 function toggleSelectAllPatients(evt) {
-  selectedPatients.value = evt.target.checked ? filtered.value.map(p => p.id) : []
+  selectedPatients.value = evt.target.checked ? patients.value.map(p => p.id) : []
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────
 function formatAge(days) {
   if (days === 0) return 'Today'
   if (days < 30)  return `${days}d ago`
   if (days < 365) return `${Math.floor(days / 30)}mo ago`
   return `${Math.floor(days / 365)}y ago`
 }
-
 function formatDate(d) {
   return new Date(d + 'T00:00:00').toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
+// ── Load paged patients ───────────────────────────────────────────────────
+async function load() {
+  loading.value = true
+  selectedPatients.value = []
+  try {
+    const { data } = await patientsApi.getAll({
+      search:   search.value || undefined,
+      status:   statusFilter.value || undefined,
+      page:     page.value,
+      pageSize: pageSize.value
+    })
+    patients.value = data.data
+    total.value    = data.total
+  } finally {
+    loading.value = false
+  }
+}
+
+// ── Load summary stat counts (independent of pagination/search) ──────────
+async function loadSummary() {
+  try {
+    const { data } = await patientsApi.getSummary()
+    summary.value = data
+  } catch {}
+}
+
+// ── Debounce search — fire 300 ms after user stops typing ─────────────────
+let searchTimer = null
+watch(search, () => {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => { page.value = 1; load() }, 300)
+})
+
+// ── Immediate reload when filter/page/pageSize changes ────────────────────
+watch(statusFilter, () => { page.value = 1; load() })
+watch([page, pageSize], () => { load() })
+
+onUnmounted(() => clearTimeout(searchTimer))
+
+// ── Report modal ─────────────────────────────────────────────────────────
 async function openReport(p) {
   reportPatient.value = p
   reportResults.value = []
   loadingReport.value = true
-  showReport.value = true
+  showReport.value    = true
   try {
     const { data } = await api.get(`/results/by-date/${p.id}`)
-    // Keep ALL results across ALL dates — no deduplication so full history is visible
     reportResults.value = (data || []).flatMap(g =>
       (g.results || []).map(r => ({ ...r, resultDate: r.resultDate || g.displayDate }))
     )
@@ -270,31 +324,30 @@ async function openReport(p) {
   }
 }
 
-async function load() {
-  loading.value = true
-  const { data } = await patientsApi.getAll()
-  patients.value = data
-  loading.value = false
-}
-
 async function create() {
   if (!newP.value.name) return
   await patientsApi.create(newP.value)
   showAdd.value = false
   newP.value = { name: '', lisPatientId: '', philhealthNo: '', birthdate: '', gender: '', contactNumber: '' }
-  await load()
+  await Promise.all([load(), loadSummary()])
 }
 
 async function deactivate(p) {
   if (!await dialog.confirm(`Deactivate ${p.name}?`, 'Deactivate Patient')) return
   await patientsApi.deactivate(p.id)
-  await load()
+  await Promise.all([load(), loadSummary()])
 }
 
-onMounted(load)
+onMounted(() => Promise.all([load(), loadSummary()]))
 </script>
 
 <style scoped>
+.pagination-wrap { display:flex; align-items:center; gap:6px; }
+.page-btn        { width:28px; height:28px; border:1px solid var(--border); border-radius:6px; background:white; cursor:pointer; font-size:14px; display:flex; align-items:center; justify-content:center; }
+.page-btn:disabled { opacity:0.4; cursor:not-allowed; }
+.page-btn:not(:disabled):hover { background:var(--teal); color:white; border-color:var(--teal); }
+.page-info       { font-size:13px; color:var(--slate); min-width:48px; text-align:center; }
+.page-size-select { height:28px; padding:0 6px; border:1px solid var(--border); border-radius:6px; font-size:12px; color:var(--slate); }
 .bulk-bar { display:flex; align-items:center; gap:10px; padding:8px 16px; background:#fef9c3; border-bottom:1px solid #fde68a; font-size:13px; }
 .bulk-count { font-weight:600; color:#92400e; }
 .row-check { width:15px; height:15px; cursor:pointer; }

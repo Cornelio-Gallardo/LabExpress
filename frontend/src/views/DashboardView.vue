@@ -28,7 +28,7 @@
       <button class="date-quick-btn" :class="{ active: isToday }" @click="setToday">Today</button>
       <button class="date-quick-btn" @click="setLast7">Last 7 days</button>
       <button class="date-quick-btn" @click="setThisMonth">This month</button>
-      <div v-if="loadingSessions" class="date-loading">Loading…</div>
+      <LoadingSpinner v-if="loadingSessions" message="Loading…" style="padding:6px 12px; flex-direction:row; gap:8px" />
     </div>
 
     <div class="dashboard-layout">
@@ -38,7 +38,7 @@
         <div class="panel-head">
           <div>
             <div class="panel-title">Patients</div>
-            <div class="panel-sub">{{ filteredPatients.length }} of {{ allPatients.length }}</div>
+            <div class="panel-sub">Top 50 by latest result · {{ patientTotal }} total</div>
           </div>
           <div class="filter-pills">
             <button class="fpill" :class="{ active: filterStatus==='all' }" @click="filterStatus='all'">All</button>
@@ -51,7 +51,7 @@
           <input v-model="search" class="form-input" style="margin:0; width:100%" placeholder="🔍 Search name, LIS ID…" autocomplete="off" />
         </div>
 
-        <div v-if="loadingPatients" class="panel-loading">Loading patients…</div>
+        <LoadingSpinner v-if="loadingPatients" message="Loading patients…" />
         <div v-else class="patient-list">
           <div v-for="p in filteredPatients" :key="p.id" class="patient-row">
 
@@ -94,6 +94,7 @@
           </div>
           <div v-if="filteredPatients.length === 0" class="empty-list">No patients found</div>
         </div>
+
       </div>
 
       <!-- RIGHT: Today's assignment summary by shift -->
@@ -103,7 +104,7 @@
           <div class="panel-sub">{{ allSessions.length }} total</div>
         </div>
 
-        <div v-if="loadingSessions" class="panel-loading">Loading…</div>
+        <LoadingSpinner v-if="loadingSessions" message="Loading…" />
         <div v-else>
           <div v-for="key in shiftKeys" :key="key" class="shift-group">
 <div class="shift-group-header">
@@ -152,9 +153,10 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useAuthStore } from '../store/auth'
 import { sessionsApi, patientsApi } from '../services/api'
+import LoadingSpinner from '../components/LoadingSpinner.vue'
 import api from '../services/api'
 import { useRouter } from 'vue-router'
 import { useDialog } from '../composables/useDialog'
@@ -207,11 +209,12 @@ const sessionsByShift = computed(() => {
 
 const shiftKeys = computed(() => Object.keys(sessionsByShift.value))
 
-// Patients
+// Patients (top 50 by latest lab result, server-side search)
 const allPatients     = ref([])
 const loadingPatients  = ref(false)
 const search          = ref('')
 const filterStatus    = ref('all')
+const patientTotal    = ref(0)
 
 // Per-row shift/chair state (default shift 1)
 const rowShift = ref({})
@@ -255,12 +258,11 @@ function dupChairsForShift(key) {
 }
 function isDupChair(s, key) { return !!s.chair && dupChairsForShift(key).has(s.chair) }
 
+// assigned/unassigned filter applied client-side on the current page
 const filteredPatients = computed(() => {
   let list = allPatients.value
   if (filterStatus.value === 'unassigned') list = list.filter(p => !isAssigned(p))
-  if (filterStatus.value === 'assigned')   list = list.filter(p => isAssigned(p))
-  const q = search.value.toLowerCase()
-  if (q) list = list.filter(p => p.name?.toLowerCase().includes(q) || p.lisPatientId?.toLowerCase().includes(q))
+  if (filterStatus.value === 'assigned')   list = list.filter(p =>  isAssigned(p))
   return list
 })
 
@@ -298,18 +300,28 @@ async function loadLastDate() {
 async function loadPatients() {
   loadingPatients.value = true
   try {
-    const params = {}
-    if (activeClientId.value) params.clientId = activeClientId.value
+    const params = { pageSize: 50, sortBy: 'lastResult' }
+    if (activeClientId.value)  params.clientId = activeClientId.value
+    if (search.value.trim())   params.search   = search.value.trim()
     const { data } = await patientsApi.getAll(params)
-    allPatients.value = data
-    // default each patient's shift to 1
-    for (const p of data) {
+    const list = data.data ?? data
+    patientTotal.value = data.total ?? list.length
+    allPatients.value  = list
+    for (const p of list) {
       if (!rowShift.value[p.id]) rowShift.value[p.id] = 'Shift 1'
       if (!rowChair.value[p.id]) rowChair.value[p.id] = ''
     }
   } catch { allPatients.value = [] }
   finally { loadingPatients.value = false }
 }
+
+// Debounce search
+let patientSearchTimer = null
+watch(search, () => {
+  clearTimeout(patientSearchTimer)
+  patientSearchTimer = setTimeout(loadPatients, 300)
+})
+onUnmounted(() => clearTimeout(patientSearchTimer))
 
 async function onClinicChange() {
   await Promise.all([loadSessions(), loadPatients()])

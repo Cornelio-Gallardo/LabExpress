@@ -3,6 +3,7 @@ using Dx7Api.DTOs;
 using Dx7Api.Services.Hl7;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Hl7MessageEntity = Dx7Api.Models.Hl7Message;
 
 namespace Dx7Api.Controllers;
 
@@ -244,7 +245,7 @@ public class Hl7Controller : TenantBaseController
             return Ok(new { files = Array.Empty<object>() });
 
         var errorFiles = Directory.GetFiles(inboxRoot, "*.hl7", SearchOption.AllDirectories)
-            .Where(f => f.Contains("error"))
+            .Where(f => Path.GetFileName(Path.GetDirectoryName(f)!) == "error")
             .Select(f =>
             {
                 // Try to detect reason from log — fallback to "error"
@@ -316,9 +317,15 @@ public class Hl7Controller : TenantBaseController
         }
         else
         {
-            // Error — re-run through processor
+            // Error — delete existing DB record + its child rows so duplicate check doesn't block reprocess
             var content = await System.IO.File.ReadAllTextAsync(req.Path);
-            var msg = Dx7Api.Services.Hl7.Hl7Parser.Parse(content, await GetSegmentIdsAsync());
+            var msg     = Hl7Parser.Parse(content, await GetSegmentIdsAsync());
+            if (!string.IsNullOrEmpty(msg.MessageId))
+            {
+                var existing = await _db.Hl7Messages
+                    .FirstOrDefaultAsync(m => m.TenantId == TenantId && m.MessageControlId == msg.MessageId);
+                if (existing != null) { await PurgeHl7MessageAsync(existing); }
+            }
             result = await _processor.ProcessAsync(msg, TenantId, content);
         }
 
@@ -332,6 +339,71 @@ public class Hl7Controller : TenantBaseController
         }
 
         return Ok(result);
+    }
+
+    /// <summary>
+    /// Reprocess ALL quarantined files (non-duplicate) in all error folders.
+    /// Deletes the existing DB record first so the duplicate check doesn't block it.
+    /// </summary>
+    [HttpPost("quarantine/reprocess-all")]
+    public async Task<IActionResult> ReprocessAllQuarantine()
+    {
+        if (!IsPlAdmin && !IsClinicAdmin) return Forbid();
+
+        var inboxRoot = _config["Hl7:InboxPath"] ?? Path.Combine(AppContext.BaseDirectory, "HL7Inbox");
+        if (!Directory.Exists(inboxRoot))
+            return Ok(new { reprocessed = 0, message = "Inbox not found" });
+
+        var errorFiles = Directory.GetFiles(inboxRoot, "*.hl7", SearchOption.AllDirectories)
+            .Where(f => Path.GetFileName(Path.GetDirectoryName(f)!) == "error")
+            .Where(f => !Path.GetFileName(f).StartsWith("dup_"))
+            .ToList();
+
+        if (errorFiles.Count == 0)
+            return Ok(new { reprocessed = 0, message = "No quarantined files found" });
+
+        var segmentIds = await GetSegmentIdsAsync();
+        var results    = new List<object>();
+
+        foreach (var filePath in errorFiles)
+        {
+            var fileName = Path.GetFileName(filePath);
+            try
+            {
+                var content = await System.IO.File.ReadAllTextAsync(filePath);
+                var msg     = Hl7Parser.Parse(content, segmentIds);
+
+                // Delete the existing quarantined DB record + child rows so duplicate check doesn't block
+                if (!string.IsNullOrEmpty(msg.MessageId))
+                {
+                    var existing = await _db.Hl7Messages
+                        .FirstOrDefaultAsync(m => m.TenantId == TenantId && m.MessageControlId == msg.MessageId);
+                    if (existing != null) await PurgeHl7MessageAsync(existing);
+                }
+
+                var result = await _processor.ProcessAsync(msg, TenantId, content);
+
+                if (result.Status != "error" && result.Status != "quarantined")
+                {
+                    var processedDir = Path.Combine(
+                        Path.GetDirectoryName(filePath)!.TrimEnd('/', '\\').Replace("\\error", "\\processed").Replace("/error", "/processed"),
+                        "");
+                    Directory.CreateDirectory(processedDir);
+                    System.IO.File.Move(filePath, Path.Combine(processedDir, fileName), overwrite: true);
+                }
+
+                results.Add(new { file = fileName, status = result.Status, notes = result.Notes, patient = result.PatientName });
+            }
+            catch (Exception ex)
+            {
+                results.Add(new { file = fileName, status = "error", notes = ex.Message, patient = "" });
+            }
+        }
+
+        var succeeded = results.Count(r => ((dynamic)r).status != "error" && ((dynamic)r).status != "quarantined");
+        var failed    = results.Count - succeeded;
+
+        return Ok(new { total = results.Count, succeeded, failed, results });
     }
 
     /// <summary>
@@ -517,6 +589,46 @@ public class Hl7Controller : TenantBaseController
     /// Handles files where segments are separated by \r, \n, or no separator at all.
     /// </summary>
     private string[]? _segmentIdsCache;
+    /// <summary>
+    /// Deletes an Hl7Message and all child rows that reference it, in the correct FK order:
+    /// ResultValues → ResultHeaders → LabOrders → Hl7Message.
+    /// Required before re-inserting the same MessageControlId.
+    /// </summary>
+    private async Task PurgeHl7MessageAsync(Hl7MessageEntity msg)
+    {
+        // Collect all header IDs that reference this message — either directly
+        // (ResultHeaders.SourceHl7MessageId) or via a LabOrder (ResultHeaders.OrderId)
+        var orderIds = await _db.Orders
+            .Where(o => o.SourceHl7MessageId == msg.Id)
+            .Select(o => o.Id)
+            .ToListAsync();
+
+        var headerIds = await _db.ResultHeaders
+            .Where(h => h.SourceHl7MessageId == msg.Id ||
+                        (orderIds.Count > 0 && orderIds.Contains(h.OrderId)))
+            .Select(h => h.Id)
+            .ToListAsync();
+
+        // Delete leaf rows first, then walk up the FK chain
+        if (headerIds.Count > 0)
+            await _db.ResultValues
+                .Where(v => headerIds.Contains(v.ResultHeaderId))
+                .ExecuteDeleteAsync();
+
+        await _db.ResultHeaders
+            .Where(h => h.SourceHl7MessageId == msg.Id ||
+                        (orderIds.Count > 0 && orderIds.Contains(h.OrderId)))
+            .ExecuteDeleteAsync();
+
+        if (orderIds.Count > 0)
+            await _db.Orders
+                .Where(o => o.SourceHl7MessageId == msg.Id)
+                .ExecuteDeleteAsync();
+
+        _db.Hl7Messages.Remove(msg);
+        await _db.SaveChangesAsync();
+    }
+
     private async Task<string[]> GetSegmentIdsAsync()
     {
         if (_segmentIdsCache != null) return _segmentIdsCache;

@@ -157,8 +157,8 @@ async function onSearchInput() {
   searching.value = true
   searchTimer = setTimeout(async () => {
     try {
-      const { data } = await patientsApi.getAll({ search: searchQuery.value, limit: 8 })
-      searchResults.value = Array.isArray(data) ? data.slice(0, 8) : (data.patients ?? []).slice(0, 8)
+      const { data } = await patientsApi.getAll({ search: searchQuery.value, pageSize: 8 })
+      searchResults.value = (data.data ?? data).slice(0, 8)
     } catch { searchResults.value = [] }
     finally { searching.value = false }
   }, 300)

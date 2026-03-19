@@ -9,6 +9,7 @@ public class Hl7FileWatcherService : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<Hl7FileWatcherService> _logger;
     private readonly IConfiguration _config;
+    private readonly IHostEnvironment _env;
     private readonly List<FileSystemWatcher> _watchers = new();
     // Serialize all file processing — prevents concurrent DB writes and log file contention
     private readonly SemaphoreSlim _processLock = new(1, 1);
@@ -16,11 +17,13 @@ public class Hl7FileWatcherService : BackgroundService
     public Hl7FileWatcherService(
         IServiceScopeFactory scopeFactory,
         ILogger<Hl7FileWatcherService> logger,
-        IConfiguration config)
+        IConfiguration config,
+        IHostEnvironment env)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
         _config = config;
+        _env = env;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -34,6 +37,11 @@ public class Hl7FileWatcherService : BackgroundService
 
         // Watch the ROOT only (not subdirectories) for new tenant folders being created
         WatchForNewTenantFolders(inboxRoot, stoppingToken);
+
+        // Dev only: also watch the root itself for .hl7 files dropped outside a tenant folder.
+        // In production (DigitalOcean) the sender always writes to the tenant subfolder.
+        if (_env.IsDevelopment())
+            WatchTenantFolder(inboxRoot, stoppingToken);
 
         // Watch each existing tenant folder directly (NOT recursively)
         foreach (var tenantDir in Directory.GetDirectories(inboxRoot))
@@ -95,9 +103,24 @@ public class Hl7FileWatcherService : BackgroundService
         _logger.LogInformation("HL7: Watching tenant folder {Dir}", tenantDir);
     }
 
-    /// Scan only the top-level of each tenant folder (not subfolders)
+    /// Scan only the top-level of each tenant folder (not subfolders).
+    /// In Development, also picks up .hl7 files dropped directly in the inbox root.
     private async Task ScanRootAsync(string inboxRoot, CancellationToken ct)
     {
+        // Dev only: also scan root-level .hl7 files (no tenant subfolder) — fallback to active tenant.
+        // In production (DigitalOcean) the sender always writes to the tenant subfolder.
+        if (_env.IsDevelopment())
+        {
+            var rootFiles = Directory.GetFiles(inboxRoot, "*.hl7");
+            if (rootFiles.Length > 0)
+                _logger.LogInformation("HL7 Scan: {Count} pending in root inbox (dev)", rootFiles.Length);
+            foreach (var file in rootFiles)
+            {
+                if (ct.IsCancellationRequested) return;
+                await ProcessFileAsync(file, inboxRoot, ct);
+            }
+        }
+
         foreach (var tenantDir in Directory.GetDirectories(inboxRoot))
         {
             // GetFiles without SearchOption.AllDirectories = top level only
