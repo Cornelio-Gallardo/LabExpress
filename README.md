@@ -15,7 +15,7 @@ Author : Cornelio S. Gallardo
 | Layer | Technology |
 |---|---|
 | **Backend** | .NET 8 — ASP.NET Core Web API |
-| **Database** | PostgreSQL 16 + Entity Framework Core 8 (Npgsql) |
+| **Database** | PostgreSQL 16 + Entity Framework Core 8 (Npgsql) | 
 | **Frontend** | Vue 3.4 + Vite 5 + Pinia 2 |
 | **Auth** | JWT Bearer (HS256, 8-hour expiry) + BCrypt password hashing |
 | **Export** | iText7 (PDF), CsvHelper (CSV) |
@@ -187,6 +187,8 @@ npm run dev
 | `AuditLogs` | Append-only change log |
 | `ShiftSchedules` | Recurring shift definitions |
 | `ShiftNurseAssignments` | Nurse-to-chair assignments per shift |
+
+Database Schema : https://dbdiagram.io/d/DX7-LabExpress-69aed88bcf54053b6f3f2db8 
 
 ---
 
