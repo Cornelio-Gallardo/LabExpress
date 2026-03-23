@@ -1,43 +1,11 @@
+# Dx7 — LabExpress Lab Results Platform
 
-Author : Cornelio S. Gallardo
+> **DOCTRINE: Dx7 is a lens, not a ledger. It shows what the data allows and nothing more.**
 
-# Dx7 — Dialysis Clinical Information System
-
-> A multi-tenant Clinical Information System (CIS) for Philippine dialysis centers.
-> Dx7 manages the full shift workflow — from patient roster assignment to lab result review to MD documentation — with integrated HL7 v2.x lab result ingestion from LIS / Sysmex instruments.
-
-**Philosophy**: *"Dx7 presents lab data as-is from the laboratory source. No color-coded risk. No interpretation labels. No risk stratification. The nephrologist judges. Dx7 presents."*
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| **Backend** | .NET 8 — ASP.NET Core Web API |
-| **Database** | PostgreSQL 16 + Entity Framework Core 8 (Npgsql) | 
-| **Frontend** | Vue 3.4 + Vite 5 + Pinia 2 |
-| **Auth** | JWT Bearer (HS256, 8-hour expiry) + BCrypt password hashing |
-| **Export** | iText7 (PDF), CsvHelper (CSV) |
-| **API Docs** | Swagger / OpenAPI (Swashbuckle) |
-| **Containerization** | Docker + Docker Compose + Nginx |
-
----
-
-## Features
-
-| Module | Description |
-|---|---|
-| **Dashboard** | Overview of daily activity and result stats |
-| **Shift Management** | Create shift schedules, assign nurses to chairs |
-| **Patient Roster** | Add/remove patients from shifts, assign chairs |
-| **Sessions** | Per-patient session view with lab results and MD notes |
-| **Lab Results** | Date-tabbed result reports with H/L/N flags, PDF/CSV export |
-| **Longitudinal View** | Patient lab history across multiple sessions |
-| **HL7 Inbox** | File-drop inbox, processing log, quarantine review and reprocessing |
-| **Users** | User CRUD with role-based access control |
-| **Clinics** | Clinic/client management (pl_admin) |
-| **Settings** | HL7 code mappings — OBR-4 test maps and OBX-3 analyte maps per tenant |
+Full-stack web application built with:
+- **Backend**: .NET 8 / ASP.NET Core Web API
+- **Frontend**: Vue.js 3 + Pinia + Vue Router
+- **Database**: PostgreSQL 16
 
 ---
 
@@ -45,254 +13,240 @@ Author : Cornelio S. Gallardo
 
 ```
 dx7/
-├── docker-compose.yml
 ├── backend/
-│   └── Dx7Api/
-│       ├── Controllers/             # 12 REST API controllers
-│       ├── Data/
-│       │   ├── AppDbContext.cs      # EF Core + global tenant filters + auto-audit
-│       │   └── DbSeeder.cs          # Seeds tenant, users, patients, code mappings
-│       ├── DTOs/                    # Request/response record types
-│       ├── Middleware/
-│       │   └── TenantMiddleware.cs  # Extracts tenant_id from JWT → DbContext
-│       ├── Models/                  # EF Core entity models
-│       ├── Services/
-│       │   ├── Hl7FileWatcherService.cs  # BackgroundService — watches HL7 inbox
-│       │   ├── AuditService.cs           # Append-only audit logging
-│       │   ├── Hl7Crypto.cs              # AES-256-GCM encryption for HL7 payloads
-│       │   └── HL7/
-│       │       ├── Hl7Parser.cs          # HL7 v2.x segment parser (MSH/PID/OBR/OBX)
-│       │       └── Hl7Processor.cs       # CDM traceability chain processor
-│       ├── HL7Inbox/
-│       │   └── {TenantFolder}/
-│       │       ├── processed/       # Successfully ingested files
-│       │       ├── error/           # Quarantined files
-│       │       └── dx7_hl7.log      # Single-line processing log
-│       ├── Program.cs               # Startup — migrate, seed, idempotent patches
-│       └── appsettings.json         # DB, JWT, Email, HL7, encryption config
-└── frontend/
-    └── src/
-        ├── views/                   # 14 Vue SPA views
-        ├── components/              # Reusable components (ResultReportModal, AppDialog)
-        ├── composables/             # Shared Vue composables
-        ├── router/index.js          # Vue Router with auth guards
-        ├── store/auth.js            # Pinia auth store (token, user, role, tenant)
-        ├── services/api.js          # Axios client with JWT interceptors
-        └── assets/main.css          # Global design system (CSS variables + utilities)
+│   ├── Dx7Api/
+│   │   ├── Controllers/        # Auth, Patients, Sessions, Results, Notes, Export,
+│   │   │                       # Users, Clinics, Shifts, Hl7, Tenant, RefData, Roles
+│   │   ├── Data/               # AppDbContext, DbSeeder
+│   │   ├── DTOs/               # Request/Response DTOs
+│   │   ├── Models/             # Tenant, Client, User, Patient, Session, Result,
+│   │   │                       # MdNote, ShiftSchedule, Hl7Message, LabOrder,
+│   │   │                       # ResultHeader, ResultValue, SxaTestCatalog, SxaAnalyte,
+│   │   │                       # TenantTestMap, TenantAnalyteMap
+│   │   ├── Services/           # JwtService, Hl7FileWatcherService, Hl7Parser,
+│   │   │                       # Hl7Processor, Hl7Crypto
+│   │   ├── appsettings.json    # Config (DB connection, JWT, CORS, HL7 inbox path)
+│   │   ├── Program.cs          # DI, middleware, auto-migrate + seed, test/analyte mappings
+│   │   └── Dockerfile
+│   └── init.sql                # Raw SQL (alternative to EF migrations)
+├── frontend/
+│   ├── src/
+│   │   ├── assets/main.css          # Global design system
+│   │   ├── services/api.js          # Axios + all API calls
+│   │   ├── store/auth.js            # Pinia auth store
+│   │   ├── router/index.js          # Vue Router
+│   │   ├── views/
+│   │   │   ├── LoginView.vue              # Login
+│   │   │   ├── DashboardView.vue          # Top 50 patients by latest result
+│   │   │   ├── ShiftSelectView.vue        # Select shift + manage current roster
+│   │   │   ├── ShiftManagementView.vue    # Create/manage shift schedules
+│   │   │   ├── PatientRosterView.vue      # Search, add patients to shift
+│   │   │   ├── SessionView.vue            # Results + MD Notes + Export
+│   │   │   ├── PatientsView.vue           # Patient management (server-side paginated)
+│   │   │   ├── UsersView.vue              # User management (server-side paginated)
+│   │   │   ├── ClinicsView.vue            # Clinic management
+│   │   │   ├── LongitudinalView.vue       # Longitudinal result trends
+│   │   │   ├── Hl7InboxView.vue           # HL7 inbox status, quarantine, reprocess
+│   │   │   ├── SettingsView.vue           # Tenant settings
+│   │   │   └── ResetPasswordView.vue      # Password reset
+│   │   ├── App.vue             # Layout: header + sidebar + router-view
+│   │   └── main.js
+│   ├── index.html
+│   ├── vite.config.js
+│   ├── Dockerfile
+│   └── nginx.conf
+└── docker-compose.yml
 ```
 
 ---
 
-## Getting Started
+## Quick Start — Local Development
 
-### Docker (Recommended)
+### Prerequisites
+- [.NET 8 SDK](https://dotnet.microsoft.com/download)
+- [Node.js 20+](https://nodejs.org)
+- [PostgreSQL 16](https://www.postgresql.org/download/) running locally
+
+### Option A: Run manually (recommended for dev)
+
+#### 1. Start PostgreSQL
+Make sure PostgreSQL is running on `localhost:5432` with:
+- Database: `dx7`
+- Username: `postgres`
+- Password: `postgres`
 
 ```bash
-git clone https://github.com/your-org/dx7.git
-cd dx7
-docker compose up --build
+psql -U postgres -c "CREATE DATABASE dx7;"
 ```
 
-| Service | URL |
-|---|---|
-| Frontend | http://localhost:5173 |
-| API | http://localhost:5000 |
-| Swagger | http://localhost:5000/swagger |
-| PostgreSQL | localhost:5432 |
-
----
-
-### Manual Setup
-
-**Backend**
-
+#### 2. Start the .NET API
 ```bash
 cd backend/Dx7Api
-# Edit appsettings.json — update DB connection string
+
+dotnet restore
+dotnet tool install --global dotnet-ef
+dotnet ef migrations add InitialCreate
+dotnet ef database update
+
 dotnet run
-# API starts on http://localhost:5000
+# → API running at http://localhost:5000
+# → Swagger UI at http://localhost:5000/swagger
 ```
 
-**Frontend**
-
+#### 3. Start the Vue frontend
 ```bash
 cd frontend
 npm install
 npm run dev
-# Dev server on http://localhost:5173
+# → App running at http://localhost:5173
+```
+
+### Option B: Docker Compose (all-in-one)
+
+```bash
+docker-compose up --build
+# → App at http://localhost:5173
+# → API at http://localhost:5000
+# → Swagger at http://localhost:5000/swagger
 ```
 
 ---
 
-## Configuration
+## Demo Accounts (auto-seeded)
 
-`backend/Dx7Api/appsettings.json`
-
-```json
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "Host=localhost;Port=5432;Database=dx7;Username=postgres;Password=postgres"
-  },
-  "Jwt": {
-    "Key": "Dx7-SuperSecretKey-ChangeInProduction-MinLength32Chars!",
-    "Issuer": "Dx7Api",
-    "Audience": "Dx7Client",
-    "ExpiryHours": 8
-  },
-  "Hl7": {
-    "InboxPath": "HL7Inbox",
-    "WatchIntervalSeconds": 30
-  },
-  "Hl7Encryption": {
-    "Key": "<Base64-encoded 32-byte AES-256 key>"
-  },
-  "Email": {
-    "SmtpHost": "smtp.gmail.com",
-    "SmtpPort": 587,
-    "UseSsl": true,
-    "FromAddress": "noreply@dx7.local"
-  },
-  "AppUrl": "http://localhost:5173"
-}
-```
-
-> **Production checklist**: Change `Jwt:Key` to a strong random string (32+ chars), configure real SMTP credentials, update `Cors:Origins` to your domain. Never commit production secrets.
+| Role | Email | Password | Can Do |
+|------|-------|----------|--------|
+| Charge Nurse | `charge@dx7.local` | `Nurse@1234` | Select patients, assign chairs, view results, export |
+| Shift Nurse | `nurse@dx7.local` | `Nurse@1234` | View results, view MD notes (read-only) |
+| Nephrologist | `md@dx7.local` | `Doctor@1234` | View results, write/edit session notes |
+| Clinic Admin | `admin@dx7.local` | `Admin@1234` | User CRUD, patient management, shift management |
+| PL Admin | `pladmin@dx7.local` | `Admin@1234` | All clinics under tenant, HL7 inbox, full admin |
 
 ---
 
-## Database
+## API Reference
 
-- **Engine**: PostgreSQL 16
-- **Schema**: Created automatically on first run via `EnsureCreatedAsync()`
-- **Seeder**: Inserts default tenant, clinic, users, role definitions, HL7 code mappings on a fresh database
-- **Startup patches**: Idempotent SQL in `Program.cs` ensures SXA catalog and tenant maps are always current (`WHERE NOT EXISTS` / `ON CONFLICT DO NOTHING`)
+### Auth
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/auth/login` | Login → JWT token |
+| POST | `/api/auth/logout` | Invalidate token |
+| POST | `/api/auth/reset-password` | Reset user password |
 
-### Key Tables
+### Patients
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/patients` | List patients (`search`, `status`, `sortBy`, `page`, `pageSize`) |
+| GET | `/api/patients/summary` | Stat card counts (total, ready, stale, noData) |
+| GET | `/api/patients/:id` | Single patient |
+| POST | `/api/patients` | Create patient |
+| DELETE | `/api/patients/:id` | Soft-delete patient |
 
-| Table | Purpose |
-|---|---|
-| `Tenants` | Top-level organization |
-| `Clients` | Dialysis clinics under a tenant |
-| `Users` | Staff accounts with roles |
-| `Patients` | Patient records (LIS IDs, PhilHealth numbers) |
-| `Sessions` | Per-patient shift sessions |
-| `LabOrders` | Orders linked to accession numbers |
-| `ResultHeaders` | One per OBR — links order to test panel |
-| `ResultValues` | One per OBX — individual analyte results |
-| `Hl7Messages` | Raw HL7 archive (AES-256-GCM encrypted) |
-| `SxaTestCatalog` | Canonical test definitions (CBC, Chemistry, Lipid, etc.) |
-| `SxaAnalytes` | Canonical analyte definitions (HGB, WBC, PLT, etc.) |
-| `TenantTestMaps` | OBR-4 code → SXA test, per tenant |
-| `TenantAnalyteMaps` | OBX-3 code → SXA analyte, per tenant |
-| `AuditLogs` | Append-only change log |
-| `ShiftSchedules` | Recurring shift definitions |
-| `ShiftNurseAssignments` | Nurse-to-chair assignments per shift |
+### Sessions
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/sessions` | Sessions by date + shift |
+| POST | `/api/sessions` | Create session |
+| POST | `/api/sessions/bulk` | Bulk create sessions |
+| PATCH | `/api/sessions/:id` | Update chair assignment |
 
-Database Schema : https://dbdiagram.io/d/DX7-LabExpress-69aed88bcf54053b6f3f2db8 
+### Results & Notes
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/results/current/:patientId` | Latest result per test code |
+| GET | `/api/results/history/:patientId/:testCode` | Result history |
+| POST | `/api/results` | Create result (manual / HL7 simulation) |
+| GET | `/api/notes?sessionId=` | MD notes for session |
+| POST | `/api/notes` | Create note (MD only) |
+| PATCH | `/api/notes/:id` | Edit note (MD, 24hr window) |
+| POST | `/api/export` | Export session CSV or JSON |
 
----
+### Users & Clinics
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/users` | List users (`search`, `role`, `status`, `page`, `pageSize`) |
+| POST | `/api/users` | Create user |
+| PATCH | `/api/users/:id` | Update user |
+| DELETE | `/api/users/:id` | Deactivate user |
+| GET | `/api/clinics` | List clinics |
+| POST | `/api/clinics` | Create clinic |
+| PATCH | `/api/clinics/:id` | Update clinic |
+| DELETE | `/api/clinics/:id` | Delete clinic |
 
-## HL7 Integration
+### Shifts
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/shifts` | Shifts for a date |
+| GET | `/api/shifts/week` | Shifts for a 7-day range |
+| GET | `/api/shifts/history` | Shift history (30-day default) |
+| POST | `/api/shifts` | Create shift schedule |
+| POST | `/api/shifts/bulk` | Bulk create shifts for a date range |
+| PATCH | `/api/shifts/:id` | Update shift |
+| DELETE | `/api/shifts/:id` | Delete shift |
+| POST | `/api/shifts/:id/nurses` | Assign nurse to shift |
+| DELETE | `/api/shifts/:id/nurses/:assignmentId` | Remove nurse from shift |
 
-Dx7 ingests HL7 v2.x `ORU^R01` result messages via a file-drop inbox monitored by a .NET `BackgroundService`.
+### HL7 Ingestion
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/hl7/log` | Recent processing log entries |
+| GET | `/api/hl7/inbox/status` | Pending/processed/errored file counts |
+| POST | `/api/hl7/upload` | Upload one or more `.hl7` files |
+| POST | `/api/hl7/message` | Submit raw HL7 message (text/plain) |
+| GET | `/api/hl7/quarantine` | List quarantined files |
+| GET | `/api/hl7/quarantine/read` | Read raw + parsed content + unmapped codes |
+| POST | `/api/hl7/quarantine/reprocess` | Reprocess single quarantined file |
+| POST | `/api/hl7/quarantine/reprocess-all` | Batch reprocess all quarantined files |
+| DELETE | `/api/hl7/quarantine` | Permanently delete quarantined file |
 
-### Processing Pipeline (CDM §9)
-
-```
-HL7 file dropped → HL7Inbox/{Tenant}/
-  ↓
-Hl7FileWatcherService detects file (FileSystemWatcher + 30s periodic scan)
-  ↓
-Hl7Parser  →  MSH / PID / OBR / OBX segments
-  ↓
-Hl7Processor:
-  1. Archive raw payload → Hl7Messages  (AES-256-GCM encrypted)
-  2. Duplicate check on MSH-10          (UNIQUE constraint — no reprocessing)
-  3. Resolve / create Patient from PID
-  4. Create LabOrder from OBR
-  5. Map OBR-4 → SxaTest               (quarantine whole message if unmapped)
-  6. Create ResultHeader
-  7. Map OBX-3 → SxaAnalyte            (quarantine individual OBX if unmapped)
-  8. Create ResultValues
-  ↓
-File moved to processed/ or error/ (quarantine)
-Entry written to dx7_hl7.log (single line, pipe-delimited)
-```
-
-### Fixing Quarantined Files
-
-1. Open **HL7 Inbox → Quarantine**
-2. Click a file to see the quarantine reason and unmapped code chips
-3. Go to **Settings → HL7 Code Mappings** and add the missing mappings
-4. Click **Reprocess** on the quarantined file
-
----
-
-## Multi-Tenancy
-
-```
-Tenant  (e.g., "Philippine Labs Corp")
-  └── Client / Clinic  (e.g., "QC Dialysis Center")
-      ├── Users     (scoped to clinic; pl_admin/sysad sees all)
-      ├── Patients
-      ├── Sessions
-      └── Shifts
-```
-
-Tenant isolation is enforced at two levels:
-1. **EF Core Global Query Filters** — `TenantMiddleware` sets `CurrentTenantId` on `AppDbContext` from the JWT; all queries automatically apply `WHERE TenantId = @id`.
-2. **Controller-level defense** — Every query also explicitly filters by `TenantId`.
+Full interactive docs: **http://localhost:5000/swagger**
 
 ---
 
-## Roles & Permissions
+## HL7 Ingestion
 
-| Permission | pl_admin | clinic_admin | charge_nurse | shift_nurse | md |
-|---|:---:|:---:|:---:|:---:|:---:|
-| View shift roster | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Manage shift schedules | ✓ | ✓ | ✓ | — | — |
-| Add / remove patients from shift | ✓ | ✓ | ✓ | — | — |
-| Assign chairs | ✓ | ✓ | ✓ | — | — |
-| View lab results | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Write MD notes | — | — | — | — | ✓ |
-| Export CSV / PDF | ✓ | ✓ | ✓ | — | — |
-| Manage users | ✓ | ✓ | — | — | — |
-| Manage clinics | ✓ | — | — | — | — |
-| HL7 Inbox access | ✓ | ✓ | — | — | — |
-| HL7 code mappings (Settings) | ✓ | ✓ | — | — | — |
+Dx7 includes a production-grade HL7 v2 ingestion pipeline:
 
----
+- **File Watcher**: `BackgroundService` monitors `HL7Inbox/{tenant}/` for `.hl7` files
+- **Supported messages**: `ORM^O01` (orders), `ORU^R01` (results)
+- **Segments parsed**: MSH, PID, OBR, OBX, NTE
+- **Duplicate detection**: MSH-10 `MessageControlId` UNIQUE constraint — idempotent
+- **Test mapping**: OBR-4 → `TenantTestMap` → `SxaTestCatalog`
+- **Analyte mapping**: OBX-3 → `TenantAnalyteMap` → `SxaAnalyte`
+- **Quarantine**: Unmapped test codes, non-numeric values, or missing patient identity → files moved to `error/` subfolder, accessible via UI for review and reprocess
+- **Encryption**: Raw HL7 payload encrypted at rest with AES-256-GCM
+- **Restart-safe**: Periodic 30s polling catches files missed during downtime
 
-## Default Seed Accounts
-
-> Created only on a fresh database. **Change all passwords before any production deployment.**
-
-| Email | Password | Role |
-|---|---|---|
-| admin@dx7.local | Admin@1234 | clinic_admin |
-| charge@dx7.local | Nurse@1234 | charge_nurse |
-| nurse@dx7.local | Nurse@1234 | shift_nurse |
-| md@dx7.local | Doctor@1234 | md (Nephrologist) |
-| pladmin@dx7.local | Admin@1234 | pl_admin |
+### HL7 Inbox path (production)
+Set via environment variable:
+```
+Hl7__InboxPath=/hl7inbox
+```
+Drop files into `/hl7inbox/{TenantSlug}/` inside the container.
 
 ---
 
 ## Architecture Notes
 
-### Audit Logging
-All writes to core entities (`Patient`, `Session`, `ResultValue`, `User`, etc.) are automatically captured in `AuditLogs` via EF Core `ChangeTracker` inside `AppDbContext.SaveChangesAsync()`. Each entry records entity type, operation, before/after JSON state, user ID, and UTC timestamp.
-
-### HL7 Payload Encryption
-Raw HL7 content stored in `Hl7Messages.RawPayload` is encrypted with AES-256-GCM via `Hl7Crypto`. Configure the key in `appsettings.json` under `Hl7Encryption:Key` as a Base64-encoded 32-byte value.
-
-### Idempotent Startup Patches
-`Program.cs` runs SQL patches on every startup to ensure the SXA test catalog, SXA analyte catalog, and all default tenant code mappings are always present — even on existing databases where the seeder guard (`if (await db.Tenants.AnyAsync()) return`) would otherwise skip them.
-
-### Concurrent HL7 Processing
-`Hl7FileWatcherService` uses a `SemaphoreSlim(1,1)` to serialize all file processing. When multiple files arrive simultaneously, they are queued and processed one at a time — preventing race conditions on patient creation and log file contention.
+- **Tenant isolation**: `tenant_id` enforced on every query server-side. Client never sets it.
+- **JWT**: 8-hour tokens (shift-length). Role, tenant, client embedded in claims.
+- **No interpretation**: Results are pass-through from source. No color coding, no risk labels.
+- **BUNPRE / BUNPOST**: Always stored and displayed as separate test codes — never collapsed.
+- **Stale data**: Results older than 30 days show ⚠ indicator with "X days ago" label.
+- **CDM traceability**: Every `ResultValue` traces back to the raw HL7 message via `SchemaVersion = "DX7_CDM_1.0_A1"`.
+- **Server-side pagination**: Patients and Users endpoints support `page`/`pageSize`/`search` — no full-table loads.
 
 ---
 
-## License
+## Key Files to Know
 
-Private — LABExpress / SanteXA. All rights reserved.
+| File | Purpose |
+|------|---------|
+| `backend/Dx7Api/Program.cs` | App bootstrap, DI, CORS, JWT, auto-migrate, test/analyte seed mappings |
+| `backend/Dx7Api/Data/DbSeeder.cs` | Demo data — patients, users, results |
+| `backend/Dx7Api/appsettings.json` | DB connection, JWT config, HL7 inbox path |
+| `backend/Dx7Api/Services/Hl7FileWatcherService.cs` | HL7 background file watcher |
+| `backend/Dx7Api/Services/Hl7/Hl7Processor.cs` | Core ingestion pipeline (parse → map → store) |
+| `frontend/src/services/api.js` | All API calls in one place |
+| `frontend/src/store/auth.js` | Login state, role helpers |
+| `frontend/src/assets/main.css` | Full design system (CSS variables) |
