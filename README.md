@@ -129,9 +129,8 @@ docker-compose up --build
 ### Auth
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/auth/login` | Login → JWT token |
-| POST | `/api/auth/logout` | Invalidate token |
-| POST | `/api/auth/reset-password` | Reset user password |
+| POST | `/api/auth/login` | Login with email + password → JWT token |
+| POST | `/api/auth/external` | SSO login via Google or Facebook → JWT token |
 
 ### Patients
 | Method | Endpoint | Description |
@@ -145,33 +144,57 @@ docker-compose up --build
 ### Sessions
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/sessions` | Sessions by date + shift |
+| GET | `/api/sessions` | Sessions by `date`, `dateFrom`/`dateTo`, or `shift` |
+| GET | `/api/sessions/last-date` | Most recent session date for a clinic |
+| GET | `/api/sessions/:id` | Single session |
 | POST | `/api/sessions` | Create session |
 | POST | `/api/sessions/bulk` | Bulk create sessions |
 | PATCH | `/api/sessions/:id` | Update chair assignment |
+| DELETE | `/api/sessions/:id` | Delete session |
 
-### Results & Notes
+### Results
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/results/current/:patientId` | Latest result per test code |
-| GET | `/api/results/history/:patientId/:testCode` | Result history |
-| POST | `/api/results` | Create result (manual / HL7 simulation) |
+| GET | `/api/results/current/:patientId` | Latest value per analyte — for status indicators |
+| GET | `/api/results/compare/:patientId` | Last N result dates as columns — for SessionView |
+| GET | `/api/results/by-date/:patientId` | All results grouped by result date |
+| GET | `/api/results/orders/:patientId` | Full CDM chain: Orders → Headers → Values |
+| GET | `/api/results/longitudinal/:patientId` | 6-month trend per analyte (`?months=6`) |
+
+### Notes & Export
+| Method | Endpoint | Description |
+|--------|----------|-------------|
 | GET | `/api/notes?sessionId=` | MD notes for session |
 | POST | `/api/notes` | Create note (MD only) |
 | PATCH | `/api/notes/:id` | Edit note (MD, 24hr window) |
 | POST | `/api/export` | Export session CSV or JSON |
+| GET | `/api/export/session-pdf` | Session result PDF |
+| POST | `/api/export/shift-pdf` | Shift summary PDF |
+| GET | `/api/export/urr` | URR report |
 
-### Users & Clinics
+### Users
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/users` | List users (`search`, `role`, `status`, `page`, `pageSize`) |
+| GET | `/api/users/me` | Current user profile |
+| GET | `/api/users/:id` | Single user |
 | POST | `/api/users` | Create user |
 | PATCH | `/api/users/:id` | Update user |
-| DELETE | `/api/users/:id` | Deactivate user |
+| PATCH | `/api/users/:id/activate` | Activate user |
+| PATCH | `/api/users/:id/deactivate` | Deactivate user |
+| PATCH | `/api/users/me/password` | Change own password |
+| POST | `/api/users/:id/avatar` | Upload avatar |
+| DELETE | `/api/users/:id/avatar` | Remove avatar |
+
+### Clinics
+| Method | Endpoint | Description |
+|--------|----------|-------------|
 | GET | `/api/clinics` | List clinics |
 | POST | `/api/clinics` | Create clinic |
 | PATCH | `/api/clinics/:id` | Update clinic |
-| DELETE | `/api/clinics/:id` | Delete clinic |
+| PATCH | `/api/clinics/:id/activate` | Activate clinic |
+| PATCH | `/api/clinics/:id/deactivate` | Deactivate clinic |
+| PATCH | `/api/clinics/:id/branding` | Update clinic branding |
 
 ### Shifts
 | Method | Endpoint | Description |
@@ -186,11 +209,30 @@ docker-compose up --build
 | POST | `/api/shifts/:id/nurses` | Assign nurse to shift |
 | DELETE | `/api/shifts/:id/nurses/:assignmentId` | Remove nurse from shift |
 
+### Tenant & Reference Data
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/tenant` | Current tenant info |
+| PATCH | `/api/tenant/branding` | Update tenant branding |
+| GET | `/api/tenant/sxa-tests` | SXA test catalog |
+| GET | `/api/tenant/sxa-analytes` | SXA analyte catalog |
+| GET | `/api/tenant/test-maps` | OBR-4 → SXA test mappings |
+| POST | `/api/tenant/test-maps` | Add test mapping |
+| DELETE | `/api/tenant/test-maps/:id` | Remove test mapping |
+| GET | `/api/tenant/analyte-maps` | OBX-3 → analyte mappings |
+| POST | `/api/tenant/analyte-maps` | Add analyte mapping |
+| DELETE | `/api/tenant/analyte-maps/:id` | Remove analyte mapping |
+| GET | `/api/roles` | Available roles (for dropdowns) |
+| GET | `/api/refdata?category=` | Reference data by category |
+
 ### HL7 Ingestion
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/hl7/log` | Recent processing log entries |
 | GET | `/api/hl7/inbox/status` | Pending/processed/errored file counts |
+| GET | `/api/hl7/log` | Recent processing log entries |
+| DELETE | `/api/hl7/log` | Clear all log entries |
+| DELETE | `/api/hl7/log/:idx` | Remove single log entry |
+| GET | `/api/hl7/log/read` | Read raw HL7 file from log entry |
 | POST | `/api/hl7/upload` | Upload one or more `.hl7` files |
 | POST | `/api/hl7/message` | Submit raw HL7 message (text/plain) |
 | GET | `/api/hl7/quarantine` | List quarantined files |
