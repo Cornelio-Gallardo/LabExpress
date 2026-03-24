@@ -90,7 +90,7 @@
                 </button>
               </div>
 
-              <!-- Single flat table — one header, all results -->
+              <!-- One table per date; tbody groups separated by panel header rows -->
               <div v-if="activeDateGroup" class="rpt-panel">
                 <table class="rpt-table">
                   <thead>
@@ -103,8 +103,11 @@
                       <th>Source</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    <tr v-for="r in activeDateResults" :key="r.id" :class="{ 'rpt-row-flag': r.abnormalFlag && r.abnormalFlag !== 'N' }">
+                  <tbody v-for="panel in activeDateGroup.panels" :key="panel.name">
+                    <tr class="rpt-panel-header-row">
+                      <td colspan="6" class="rpt-panel-title">{{ panel.name }}</td>
+                    </tr>
+                    <tr v-for="r in panel.results" :key="r.id" :class="{ 'rpt-row-flag': r.abnormalFlag && r.abnormalFlag !== 'N' }">
                       <td>
                         <div class="rpt-test-name">{{ r.testName }}</div>
                         <div class="rpt-test-code">{{ r.testCode }}</div>
@@ -165,18 +168,50 @@ const printedBy  = auth.user?.name    || ''
 const clinicName = auth.client?.name  || 'Dialysis Center'
 const tenantName = auth.tenant?.name  || 'LABExpress'
 
+// F-14: panelLabel normalises across three data sources in priority order:
+//   1. sxaTestName  — canonical DB name (e.g. "General Chemistry Panel")
+//   2. sxaTestId    — SXA_TEST_* code (e.g. "SXA_TEST_CHEM")
+//   3. testCode     — raw analyte or HCLab OBR-4 code (e.g. "BUNPRE", "CHOL")
+// All three are concatenated into a single probe string so one pass covers every path.
+// HCLab codes without a dash separator (BUNPRE, BUNPOST, BUNPOS) are handled via
+// includes('BUN') — no dash required.
 function panelLabel(r) {
+  const probe = [r.sxaTestName, r.sxaTestId, r.testCode]
+    .filter(Boolean).join(' ').toUpperCase()
+
+  if (probe.includes('CBC') || probe.includes('BLOOD COUNT') ||
+      probe.includes('HGB') || probe.includes('WBC') || probe.includes('PLT'))
+    return 'CBC — Complete Blood Count'
+
+  // F-14: lipid analytes (CHOL, TRIG, HDL, LDL, VLDL) were previously unmatched → 'Other'
+  if (probe.includes('LIPID') || probe.includes('CHOL') || probe.includes('TRIG') ||
+      probe.includes('VLDL') || probe.includes(' HDL') || probe.includes('_HDL') ||
+      probe.includes(' LDL') || probe.includes('_LDL'))
+    return 'Lipid Panel'
+
+  if (probe.includes('BUN') || probe.includes('UREA') ||
+      probe.includes('URR') || probe.includes('KT/V') || probe.includes('KTV'))
+    return 'BUN — Blood Urea Nitrogen'
+
+  if (probe.includes('FBS') || probe.includes('GLU') || probe.includes('HBA1C') ||
+      probe.includes('SUGAR') || probe.includes('FASTING'))
+    return 'Glucose'
+
+  // 'UA' check is last among urinalysis patterns to avoid false match on SXA_A_UA (Uric Acid),
+  // which arrives with sxaTestId = SXA_TEST_CHEM and is caught by Chemistry below.
+  if (probe.includes('URINE') || probe.includes('URINALYSIS'))
+    return 'Urinalysis'
+
+  if (probe.includes('CHEM') || probe.includes('CREA') || probe.includes('CHEMISTRY') ||
+      probe.includes('BILI') || probe.includes('FER')  || probe.includes('TFT') ||
+      probe.includes('DDIMER') || probe.includes('PHOS') || probe.includes('ALB') ||
+      probe.includes('ALT') || probe.includes('MULTI') || probe.includes('POTASSIUM') ||
+      probe === 'K' || probe.endsWith('_K'))
+    return 'Chemistry'
+
+  // For CDM data not matched above, surface the canonical test name rather than 'Other'
   if (r.sxaTestName) return r.sxaTestName
-  if (r.sxaTestId) {
-    const id = r.sxaTestId.toUpperCase()
-    if (id.includes('CBC'))   return 'CBC'
-    if (id.includes('LIPID')) return 'Lipid Panel'
-    if (id.includes('CHEM') || id.includes('BUN') || id.includes('FBS') || id.includes('K'))
-      return 'Chemistry'
-    return r.sxaTestId
-  }
-  const prefix = (r.testCode || '').toUpperCase().split('-')[0]
-  return { CBC: 'CBC', CHEM: 'Chemistry', URINE: 'Urinalysis', UA: 'Urinalysis' }[prefix] || 'Other'
+  return 'Other'
 }
 
 // Group by date (newest first)
@@ -189,7 +224,14 @@ const dateGroups = computed(() => {
     if (!byDate[date][panel]) byDate[date][panel] = []
     byDate[date][panel].push(r)
   }
-  const panelOrder = ['CBC', 'Chemistry', 'Urinalysis']
+  const panelOrder = [
+    'CBC — Complete Blood Count',
+    'Chemistry',
+    'BUN — Blood Urea Nitrogen',
+    'Lipid Panel',
+    'Glucose',
+    'Urinalysis',
+  ]
   return Object.entries(byDate)
     .sort(([a], [b]) => b.localeCompare(a)) // newest date first
     .map(([date, panels]) => ({
@@ -198,7 +240,7 @@ const dateGroups = computed(() => {
         .sort(([a], [b]) => {
           const ai = panelOrder.includes(a) ? panelOrder.indexOf(a) : 99
           const bi = panelOrder.includes(b) ? panelOrder.indexOf(b) : 99
-          return ai - bi
+          return ai !== bi ? ai - bi : a.localeCompare(b)
         })
         .map(([name, results]) => ({
           name,
@@ -240,7 +282,8 @@ const printStyles = `
   .rpt-field-value{font-size:12px;font-weight:600;color:#111827;margin-top:2px}
   .font-mono{font-family:'Courier New',monospace}
   .rpt-panel{margin-bottom:18px}
-  .rpt-panel-title{font-size:11px;font-weight:700;color:#1e3a8a;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid #dbeafe}
+  .rpt-panel-title{font-size:11px;font-weight:700;color:#1d4ed8;text-transform:uppercase;letter-spacing:0.5px}
+  .rpt-panel-header-row td{background:#eff6ff;padding:5px 10px;border-bottom:1px solid #bfdbfe}
   table{width:100%;border-collapse:collapse;font-size:11px}
   thead tr{background:#f9fafb}
   th{padding:6px 10px;font-size:10px;font-weight:600;color:#6b7280;text-align:left;border-bottom:1px solid #e5e7eb;white-space:nowrap}
@@ -395,7 +438,8 @@ async function downloadPdf() {
 .rpt-field-value { font-size: 13px; font-weight: 600; color: var(--navy); margin-top: 2px; }
 .font-mono       { font-family: 'Courier New', monospace; font-size: 12px; }
 .rpt-panel       { margin-bottom: 22px; }
-.rpt-panel-title { font-size: 12px; font-weight: 700; color: var(--primary-mid); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 2px solid var(--primary-pale); }
+.rpt-panel-title { font-size: 11px; font-weight: 700; color: #1d4ed8; text-transform: uppercase; letter-spacing: 0.5px; }
+.rpt-panel-header-row td { background: #eff6ff; padding: 5px 12px; border-bottom: 1px solid #bfdbfe; }
 .rpt-table       { width: 100%; border-collapse: collapse; font-size: 13px; }
 .rpt-table thead tr { background: var(--table-head-bg); }
 .rpt-table th    { padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--table-head-color); text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }

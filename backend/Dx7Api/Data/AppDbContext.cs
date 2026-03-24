@@ -115,24 +115,28 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<ResultHeader>()  .ToTable("ResultHeaders");
         modelBuilder.Entity<ResultValue>()   .ToTable("ResultValues");
 
-        // ── Global tenant isolation filters ───────────────────────────────────
-        modelBuilder.Entity<Client>()          .HasQueryFilter(e => CurrentTenantId == null || e.TenantId == CurrentTenantId);
-        modelBuilder.Entity<User>()            .HasQueryFilter(e => CurrentTenantId == null || e.TenantId == CurrentTenantId);
-        modelBuilder.Entity<Patient>()         .HasQueryFilter(e => CurrentTenantId == null || e.TenantId == CurrentTenantId);
-        modelBuilder.Entity<Session>()         .HasQueryFilter(e => CurrentTenantId == null || e.TenantId == CurrentTenantId);
-        modelBuilder.Entity<MdNote>()          .HasQueryFilter(e => CurrentTenantId == null || e.TenantId == CurrentTenantId);
-        modelBuilder.Entity<RoleDefinition>()  .HasQueryFilter(e => CurrentTenantId == null || e.TenantId == CurrentTenantId);
-        modelBuilder.Entity<Hl7Message>()      .HasQueryFilter(e => CurrentTenantId == null || e.TenantId == CurrentTenantId);
-        modelBuilder.Entity<LabOrder>()        .HasQueryFilter(e => CurrentTenantId == null || e.TenantId == CurrentTenantId);
-        modelBuilder.Entity<ResultHeader>()    .HasQueryFilter(e => CurrentTenantId == null || e.TenantId == CurrentTenantId);
-        modelBuilder.Entity<ResultValue>()     .HasQueryFilter(e => CurrentTenantId == null || e.TenantId == CurrentTenantId);
-        modelBuilder.Entity<TenantTestMap>()   .HasQueryFilter(e => CurrentTenantId == null || e.TenantId == CurrentTenantId);
-        modelBuilder.Entity<TenantAnalyteMap>().HasQueryFilter(e => CurrentTenantId == null || e.TenantId == CurrentTenantId);
-        modelBuilder.Entity<ShiftSchedule>()   .HasQueryFilter(e => CurrentTenantId == null || e.TenantId == CurrentTenantId);
-        modelBuilder.Entity<ShiftNurseAssignment>().HasQueryFilter(e => CurrentTenantId == null || e.TenantId == CurrentTenantId);
-        modelBuilder.Entity<Result>()          .HasQueryFilter(e => CurrentTenantId == null || e.TenantId == CurrentTenantId);
-        modelBuilder.Entity<AuditLog>()        .HasQueryFilter(e => CurrentTenantId == null || e.TenantId == CurrentTenantId);
-        modelBuilder.Entity<LabNote>()         .HasQueryFilter(e => CurrentTenantId == null || e.TenantId == CurrentTenantId);
+        // ── Global tenant isolation filters — FAIL-CLOSED ─────────────────────
+        // PRD v1.3 Inv.3: CurrentTenantId == null must return ZERO rows, not all rows.
+        // Controllers that need cross-tenant access (e.g. seeding, external login) must
+        // call .IgnoreQueryFilters() explicitly.
+        modelBuilder.Entity<Client>()              .HasQueryFilter(e => CurrentTenantId != null && e.TenantId == CurrentTenantId);
+        modelBuilder.Entity<User>()                .HasQueryFilter(e => CurrentTenantId != null && e.TenantId == CurrentTenantId);
+        modelBuilder.Entity<Patient>()             .HasQueryFilter(e => CurrentTenantId != null && e.TenantId == CurrentTenantId);
+        modelBuilder.Entity<Session>()             .HasQueryFilter(e => CurrentTenantId != null && e.TenantId == CurrentTenantId);
+        modelBuilder.Entity<MdNote>()              .HasQueryFilter(e => CurrentTenantId != null && e.TenantId == CurrentTenantId);
+        modelBuilder.Entity<RoleDefinition>()      .HasQueryFilter(e => CurrentTenantId != null && e.TenantId == CurrentTenantId);
+        modelBuilder.Entity<Hl7Message>()          .HasQueryFilter(e => CurrentTenantId != null && e.TenantId == CurrentTenantId);
+        modelBuilder.Entity<LabOrder>()            .HasQueryFilter(e => CurrentTenantId != null && e.TenantId == CurrentTenantId);
+        modelBuilder.Entity<ResultHeader>()        .HasQueryFilter(e => CurrentTenantId != null && e.TenantId == CurrentTenantId);
+        modelBuilder.Entity<ResultValue>()         .HasQueryFilter(e => CurrentTenantId != null && e.TenantId == CurrentTenantId);
+        modelBuilder.Entity<TenantTestMap>()       .HasQueryFilter(e => CurrentTenantId != null && e.TenantId == CurrentTenantId);
+        modelBuilder.Entity<TenantAnalyteMap>()    .HasQueryFilter(e => CurrentTenantId != null && e.TenantId == CurrentTenantId);
+        modelBuilder.Entity<ShiftSchedule>()       .HasQueryFilter(e => CurrentTenantId != null && e.TenantId == CurrentTenantId);
+        modelBuilder.Entity<ShiftNurseAssignment>().HasQueryFilter(e => CurrentTenantId != null && e.TenantId == CurrentTenantId);
+        modelBuilder.Entity<Result>()              .HasQueryFilter(e => CurrentTenantId != null && e.TenantId == CurrentTenantId);
+        modelBuilder.Entity<AuditLog>()            .HasQueryFilter(e => CurrentTenantId != null && e.TenantId == CurrentTenantId);
+        modelBuilder.Entity<LabNote>()             .HasQueryFilter(e => CurrentTenantId != null && e.TenantId == CurrentTenantId);
+        modelBuilder.Entity<ChairAudit>()          .HasQueryFilter(e => CurrentTenantId != null && e.TenantId == CurrentTenantId);
 
         // ── Unique indexes ────────────────────────────────────────────────────
         // §2.1 — prevents HL7 retransmission duplicates

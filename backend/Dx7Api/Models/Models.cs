@@ -177,6 +177,8 @@ public class ResultValue
     // CDM Amendment 1 §10.4 — special value flags
     public bool NoSpecimen    { get; set; } = false;              // OBX-5 was '*'  — no specimen received
     public bool NotCalculated { get; set; } = false;              // OBX-5 was '---' — calculated field indeterminate
+    // CDM Amendment 2 §12 — correction chain (OBX-11=C)
+    public bool Superseded    { get; set; } = false;              // true = this row was replaced by a correction
     // CDM Amendment 1 §11.2 — schema version for ingestion traceability
     [MaxLength(30)] public string SchemaVersion { get; set; } = "DX7_CDM_1.0_A1";
     [ForeignKey("ResultHeaderId")] public ResultHeader ResultHeader { get; set; } = null!;

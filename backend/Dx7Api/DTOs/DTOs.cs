@@ -4,8 +4,8 @@ namespace Dx7Api.DTOs;
 public record LoginRequest(string Email, string Password);
 public record ExternalLoginRequest(string Provider, string Token);
 
+// F-09: Token is delivered via httpOnly cookie — never in the response body.
 public record LoginResponse(
-    string Token,
     UserDto User,
     TenantDto Tenant,
     ClientDto? Client

@@ -38,6 +38,9 @@ public class Hl7Processor(AppDbContext db, ILogger<Hl7Processor> logger)
             AccessionId = msg.AccessionId
         };
 
+        // Set tenant context for query filters — processor runs as background service (no JWT)
+        _db.CurrentTenantId = tenantId;
+
         Models.Hl7Message? hl7Archive = null;
         try
         {
@@ -47,10 +50,25 @@ public class Hl7Processor(AppDbContext db, ILogger<Hl7Processor> logger)
 
             if (existingMsg != null)
             {
-                result.Status = "duplicate";
-                result.Notes  = $"MSH-10 '{msg.MessageId}' already processed — §2.1 UNIQUE constraint.";
-                _logger.LogInformation("HL7 duplicate MSH-10 {MsgId}", msg.MessageId);
-                return result;
+                // A true duplicate has ProcessedFlag=true OR already has ResultHeaders.
+                // If neither is true the prior run saved the archive row then crashed
+                // (e.g. during a migration failure) before any results were written.
+                // Delete the zombie record and fall through to reprocess.
+                var hasResults = await _db.ResultHeaders
+                    .AnyAsync(rh => rh.SourceHl7MessageId == existingMsg.Id);
+
+                if (existingMsg.ProcessedFlag || hasResults)
+                {
+                    result.Status = "duplicate";
+                    result.Notes  = $"MSH-10 '{msg.MessageId}' already processed — §2.1 UNIQUE constraint.";
+                    _logger.LogInformation("HL7 duplicate MSH-10 {MsgId}", msg.MessageId);
+                    return result;
+                }
+
+                // Zombie record — remove it so the message can be reprocessed cleanly.
+                _logger.LogWarning("HL7 {MsgId}: removing zombie archive record (prior run crashed before results were saved)", msg.MessageId);
+                _db.Hl7Messages.Remove(existingMsg);
+                await _db.SaveChangesAsync();
             }
 
             hl7Archive = new Models.Hl7Message
@@ -265,6 +283,52 @@ public class Hl7Processor(AppDbContext db, ILogger<Hl7Processor> logger)
 
                     (decimal? low, decimal? high) = ParseRefRange(obs.ReferenceRange);
 
+                    // CDM A2 §12 — OBX-11=C correction chain
+                    // 1. Load prior active rows for the snapshot (needed for audit Before field).
+                    // 2. Bulk-supersede via ExecuteUpdateAsync (bypasses change tracker — no auto-audit).
+                    // 3. Write one AuditLog row per superseded ResultValue.
+                    bool isCorrection = string.Equals(obs.ResultStatus?.Trim(), "C", StringComparison.OrdinalIgnoreCase);
+                    if (isCorrection)
+                    {
+                        var priorRows = await _db.ResultValues
+                            .Where(rv => rv.TenantId         == tenantId
+                                      && rv.AnalyteCode      == analyteMap.AnalyteCode
+                                      && rv.ResultHeader.OrderId == order.Id
+                                      && !rv.Superseded)
+                            .ToListAsync();
+
+                        if (priorRows.Count > 0)
+                        {
+                            var priorIds = priorRows.Select(rv => rv.Id).ToList();
+
+                            // Bulk update — direct SQL, bypasses EF change tracker
+                            await _db.ResultValues
+                                .Where(rv => priorIds.Contains(rv.Id))
+                                .ExecuteUpdateAsync(s => s.SetProperty(rv => rv.Superseded, true));
+
+                            // Manual audit — ExecuteUpdateAsync never fires SaveChangesAsync hook
+                            foreach (var prior in priorRows)
+                            {
+                                _db.AuditLogs.Add(new AuditLog
+                                {
+                                    TenantId  = tenantId,
+                                    UserId    = null,   // background service — no JWT user context
+                                    Action    = "CORRECTION",
+                                    Entity    = "ResultValue",
+                                    EntityId  = prior.Id,
+                                    Before    = $"{{\"AnalyteCode\":\"{prior.AnalyteCode}\",\"DisplayValue\":\"{prior.DisplayValue}\",\"ValueNumeric\":{prior.ValueNumeric?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "null"},\"Superseded\":false}}",
+                                    After     = $"{{\"Superseded\":true,\"CorrectionMsgId\":\"{msg.MessageId}\"}}",
+                                    Notes     = $"OBX-11=C — analyte {analyteMap.AnalyteCode}, accession {msg.AccessionId}",
+                                    Timestamp = DateTime.UtcNow,
+                                });
+                            }
+                            await _db.SaveChangesAsync();
+
+                            _logger.LogInformation("HL7 {MsgId}: OBX-11=C — superseded {Count} prior ResultValue(s) for analyte {Code}, audit written",
+                                msg.MessageId, priorRows.Count, analyteMap.AnalyteCode);
+                        }
+                    }
+
                     _db.ResultValues.Add(new ResultValue
                     {
                         ResultHeaderId     = header.Id,
@@ -280,6 +344,7 @@ public class Hl7Processor(AppDbContext db, ILogger<Hl7Processor> logger)
                         RawHl7Segment      = obs.RawSegment,
                         NoSpecimen         = noSpecimen,
                         NotCalculated      = notCalculated,
+                        Superseded         = false,
                         SchemaVersion      = "DX7_CDM_1.0_A1",
                     });
                     saved++;
@@ -392,6 +457,7 @@ public class Hl7Processor(AppDbContext db, ILogger<Hl7Processor> logger)
     private async Task<(Patient? patient, bool wasCreated)> ResolveOrCreatePatientAsync(
         Hl7Message msg, Guid tenantId)
     {
+        // CDM §3.3 — Step 1: exact LisPatientId match (PID-3) across all clients in tenant
         if (!string.IsNullOrEmpty(msg.PatientId))
         {
             var byId = await _db.Patients.FirstOrDefaultAsync(p =>
@@ -399,6 +465,7 @@ public class Hl7Processor(AppDbContext db, ILogger<Hl7Processor> logger)
             if (byId != null) return (byId, false);
         }
 
+        // Step 2: name match (case-insensitive) — write back LisPatientId so future messages hit Step 1
         if (!string.IsNullOrEmpty(msg.PatientName))
         {
             var patientNameLower = msg.PatientName.ToLower();
@@ -408,6 +475,7 @@ public class Hl7Processor(AppDbContext db, ILogger<Hl7Processor> logger)
                 p.IsActive);
             if (byName != null)
             {
+                // Write back LisPatientId so future messages bypass the name match
                 if (string.IsNullOrEmpty(byName.LisPatientId) && !string.IsNullOrEmpty(msg.PatientId))
                 { byName.LisPatientId = msg.PatientId; await _db.SaveChangesAsync(); }
                 return (byName, false);

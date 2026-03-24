@@ -1,19 +1,27 @@
 import { defineStore } from 'pinia'
 import { authApi } from '../services/api'
 
+// F-09: httpOnly Cookie pattern.
+// The JWT is stored exclusively in an httpOnly, Secure, SameSite=Lax cookie set by the
+// server on login. JavaScript never reads, writes, or transmits the token — the browser
+// sends it automatically via withCredentials on every API request.
+// Profile data (non-secret) is mirrored in sessionStorage so the UI survives page reload;
+// it is cleared on logout and never contains the credential itself.
+
 export const useAuthStore = defineStore('auth', {
   state: () => ({
-    user: JSON.parse(localStorage.getItem('dx7_user') || 'null'),
-    tenant: JSON.parse(localStorage.getItem('dx7_tenant') || 'null'),
-    client: JSON.parse(localStorage.getItem('dx7_client') || 'null'),
-    token: localStorage.getItem('dx7_token') || null,
-    roles: JSON.parse(localStorage.getItem('dx7_roles') || '[]'),
+    // No token field — credential lives only in the httpOnly cookie
+    user:   JSON.parse(sessionStorage.getItem('dx7_user')   || 'null'),
+    tenant: JSON.parse(sessionStorage.getItem('dx7_tenant') || 'null'),
+    client: JSON.parse(sessionStorage.getItem('dx7_client') || 'null'),
+    roles:  JSON.parse(sessionStorage.getItem('dx7_roles')  || '[]'),
     loading: false,
     error: null
   }),
 
   getters: {
-    isLoggedIn: (s) => !!s.token,
+    // Session is active when profile data is present (backed by httpOnly cookie on server)
+    isLoggedIn: (s) => !!s.user,
     role: (s) => s.user?.role || '',
 
     // Role checks
@@ -24,10 +32,8 @@ export const useAuthStore = defineStore('auth', {
     isShiftNurse:  (s) => s.user?.role === 'shift_nurse',
     isMd:          (s) => s.user?.role === 'md',
 
-    // Admin = can access user/clinic management UI
-    isAdmin: (s) => ['clinic_admin', 'pl_admin'].includes(s.user?.role),
-    // Clinic staff = clinical roles
-    isClinical: (s) => ['charge_nurse', 'shift_nurse', 'md'].includes(s.user?.role),
+    isAdmin:   (s) => ['clinic_admin', 'pl_admin'].includes(s.user?.role),
+    isClinical:(s) => ['charge_nurse', 'shift_nurse', 'md'].includes(s.user?.role),
 
     // Per PRD Role Permissions Matrix
     canSelectShift:    (s) => ['charge_nurse', 'shift_nurse', 'md', 'clinic_admin', 'pl_admin'].includes(s.user?.role),
@@ -42,7 +48,6 @@ export const useAuthStore = defineStore('auth', {
     canManageUsers:    (s) => ['clinic_admin', 'pl_admin'].includes(s.user?.role),
     canManageClinics:  (s) => s.user?.role === 'pl_admin',
 
-    // Display label from DB roles — falls back to role key if not loaded yet
     roleLabel: (s) => {
       if (s.roles.length > 0) {
         const found = s.roles.find(r => r.roleKey === s.user?.role)
@@ -57,18 +62,17 @@ export const useAuthStore = defineStore('auth', {
       this.loading = true
       this.error = null
       try {
+        // Server sets httpOnly cookie; response body carries only profile data (no token)
         const { data } = await authApi.login(email, password)
-        // Normalise — ensure id is always lowercase regardless of server casing
         const normaliseClient = (c) => c ? { ...c, id: c.id || c.Id } : null
         const normaliseUser   = (u) => u ? { ...u, id: u.id || u.Id } : null
-        this.token  = data.token
         this.user   = normaliseUser(data.user)
         this.tenant = data.tenant
         this.client = normaliseClient(data.client)
-        localStorage.setItem('dx7_token',  data.token)
-        localStorage.setItem('dx7_user',   JSON.stringify(this.user))
-        localStorage.setItem('dx7_tenant', JSON.stringify(this.tenant))
-        localStorage.setItem('dx7_client', JSON.stringify(this.client))
+        sessionStorage.setItem('dx7_user',   JSON.stringify(this.user))
+        sessionStorage.setItem('dx7_tenant', JSON.stringify(this.tenant))
+        sessionStorage.setItem('dx7_client', JSON.stringify(this.client))
+        this.fetchRoles()
         return true
       } catch (err) {
         this.error = err.response?.data?.message || 'Login failed'
@@ -78,16 +82,16 @@ export const useAuthStore = defineStore('auth', {
       }
     },
 
+    // Called after SSO external login (Google / Facebook)
     setSession(data) {
-      this.token  = data.token
-      this.user   = data.user
+      const normaliseClient = (c) => c ? { ...c, id: c.id || c.Id } : null
+      const normaliseUser   = (u) => u ? { ...u, id: u.id || u.Id } : null
+      this.user   = normaliseUser(data.user)
       this.tenant = data.tenant
-      this.client = data.client
-      localStorage.setItem('dx7_token',  data.token)
-      localStorage.setItem('dx7_user',   JSON.stringify(data.user))
-      localStorage.setItem('dx7_tenant', JSON.stringify(data.tenant))
-      localStorage.setItem('dx7_client', JSON.stringify(data.client))
-      // Fetch roles from DB after login
+      this.client = normaliseClient(data.client)
+      sessionStorage.setItem('dx7_user',   JSON.stringify(this.user))
+      sessionStorage.setItem('dx7_tenant', JSON.stringify(this.tenant))
+      sessionStorage.setItem('dx7_client', JSON.stringify(this.client))
       this.fetchRoles()
     },
 
@@ -96,23 +100,33 @@ export const useAuthStore = defineStore('auth', {
         const api = (await import('../services/api')).default
         const { data } = await api.get('/roles')
         this.roles = data
-        localStorage.setItem('dx7_roles', JSON.stringify(data))
+        sessionStorage.setItem('dx7_roles', JSON.stringify(data))
       } catch (e) {
         console.warn('Could not load roles from DB:', e)
       }
     },
 
-    logout() {
-      this.token = null
-      this.user = null
+    async logout() {
+      try {
+        // Ask server to expire the httpOnly cookie — browser cannot do this itself
+        const api = (await import('../services/api')).default
+        await api.post('/auth/logout')
+      } catch { /* ignore network errors on logout */ }
+
+      this.user   = null
       this.tenant = null
       this.client = null
+      this.roles  = []
+      sessionStorage.removeItem('dx7_user')
+      sessionStorage.removeItem('dx7_tenant')
+      sessionStorage.removeItem('dx7_client')
+      sessionStorage.removeItem('dx7_roles')
+      // Remove stale localStorage entries from versions prior to the cookie migration
       localStorage.removeItem('dx7_token')
       localStorage.removeItem('dx7_user')
       localStorage.removeItem('dx7_tenant')
       localStorage.removeItem('dx7_client')
       localStorage.removeItem('dx7_roles')
-      this.roles = []
     }
   }
 })

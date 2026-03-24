@@ -55,6 +55,7 @@ public static class DbSeeder
             new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantTestCode = "K",        SxaTestId = "SXA_TEST_K",        IsActive = true },
             new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantTestCode = "LIPID",    SxaTestId = "SXA_TEST_LIPID",    IsActive = true },
             new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantTestCode = "CHEM",     SxaTestId = "SXA_TEST_CHEM",     IsActive = true },
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantTestCode = "CREA",     SxaTestId = "SXA_TEST_CHEM",     IsActive = true }, // F-12: HCLab OBR-4 for creatinine/chemistry panel
             // Fallback for any unmapped OBR-4 — prevents full message quarantine
             new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantTestCode = "MULTI",    SxaTestId = "SXA_TEST_MULTI",    IsActive = true }
         );
@@ -80,6 +81,7 @@ public static class DbSeeder
             new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "BUNPRE",  AnalyteCode = "SXA_A_BUN_PRE",  IsActive = true },
             new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "BUNPOST", AnalyteCode = "SXA_A_BUN_POST", IsActive = true },
             new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "BUNPOS",  AnalyteCode = "SXA_A_BUN_POST", IsActive = true }, // HCLAB alias
+            new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "BUN",     AnalyteCode = "SXA_A_BUN_POST", IsActive = true }, // F-12: HCLab standalone BUN OBX-3
             new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "URR",     AnalyteCode = "SXA_A_URR",      IsActive = true },
             new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "KT/V",    AnalyteCode = "SXA_A_KTV",      IsActive = true },
             new() { Id = Guid.NewGuid(), TenantId = tenant.Id, TenantAnalyteCode = "CREA",    AnalyteCode = "SXA_A_CREA",     IsActive = true },

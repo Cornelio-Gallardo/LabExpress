@@ -287,15 +287,6 @@ async function loadSessions() {
   finally { loadingSessions.value = false }
 }
 
-async function loadLastDate() {
-  try {
-    const params = {}
-    if (activeClientId.value) params.clientId = activeClientId.value
-    const { data } = await api.get('/sessions/last-date', { params })
-    dateFrom.value = data.date
-    dateTo.value   = data.date
-  } catch {}
-}
 
 async function loadPatients() {
   loadingPatients.value = true
@@ -405,7 +396,6 @@ function goToPatientSession(p) {
 
 onMounted(async () => {
   await loadClinics()
-  await loadLastDate()
   await Promise.all([loadSessions(), loadPatients()])
 })
 </script>

@@ -211,6 +211,7 @@ public class SessionsController : TenantBaseController
 
         var audit = new ChairAudit
         {
+            TenantId  = TenantId,
             SessionId = id,
             ChairOld  = session.Chair,
             ChairNew  = req.Chair,

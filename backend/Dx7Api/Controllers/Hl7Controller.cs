@@ -62,8 +62,10 @@ public class Hl7Controller : TenantBaseController
                 });
 
                 // Also save to inbox processed folder for audit trail
-                var prefix   = result.Status == "duplicate" ? "dup_" : "";
-                SaveToInbox(content, prefix + file.FileName, (result.Status == "error" || result.Status == "duplicate") ? "error" : "processed");
+                var prefix     = result.Status == "duplicate" ? "dup_" : "";
+                var subfolder  = (result.Status == "error" || result.Status == "duplicate") ? "error" : "processed";
+                SaveToInbox(content, prefix + file.FileName, subfolder);
+                AppendToLog(file.FileName, result);
             }
             catch (Exception ex)
             {
@@ -672,5 +674,26 @@ public class Hl7Controller : TenantBaseController
             System.IO.File.WriteAllText(path, content);
         }
         catch { /* audit save is non-fatal */ }
+    }
+
+    private void AppendToLog(string fileName, Hl7ProcessResult r)
+    {
+        try
+        {
+            var inboxRoot = _config["Hl7:InboxPath"] ?? Path.Combine(AppContext.BaseDirectory, "HL7Inbox");
+            var patient   = string.IsNullOrEmpty(r.PatientName) ? r.PatientId : $"{r.PatientId} {r.PatientName}".Trim();
+            var line      = string.Join("|",
+                DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                r.Status,
+                r.MessageType,
+                patient,
+                r.AccessionId,
+                r.ResultsSaved.ToString(),
+                $"File: {fileName}",
+                (r.Notes ?? "").ReplaceLineEndings(" ").Trim()
+            );
+            System.IO.File.AppendAllText(Path.Combine(inboxRoot, "dx7_hl7.log"), line + Environment.NewLine);
+        }
+        catch { /* log write is non-fatal */ }
     }
 }

@@ -32,20 +32,25 @@ public class Hl7FileWatcherService : BackgroundService
         Directory.CreateDirectory(inboxRoot);
         _logger.LogInformation("HL7 Watcher started. Root: {Path}", inboxRoot);
 
-        // Initial scan
+        // Dev only: watch root for .hl7 files dropped outside a tenant folder.
+        // Must run BEFORE ScanRootAsync so archive dirs (processed/, error/) exist
+        // when files are moved during the initial scan.
+        if (_env.IsDevelopment())
+            WatchTenantFolder(inboxRoot, stoppingToken);
+
+        // Initial scan (archive dirs now guaranteed to exist for dev root)
         await ScanRootAsync(inboxRoot, stoppingToken);
 
         // Watch the ROOT only (not subdirectories) for new tenant folders being created
         WatchForNewTenantFolders(inboxRoot, stoppingToken);
 
-        // Dev only: also watch the root itself for .hl7 files dropped outside a tenant folder.
-        // In production (DigitalOcean) the sender always writes to the tenant subfolder.
-        if (_env.IsDevelopment())
-            WatchTenantFolder(inboxRoot, stoppingToken);
-
-        // Watch each existing tenant folder directly (NOT recursively)
+        // Watch each existing tenant folder directly (NOT recursively).
+        // Skip archive folders that WatchTenantFolder may have already created in root (dev mode).
         foreach (var tenantDir in Directory.GetDirectories(inboxRoot))
+        {
+            if (IsArchiveFolder(tenantDir)) continue;
             WatchTenantFolder(tenantDir, stoppingToken);
+        }
 
         // Periodic scan as safety net
         while (!stoppingToken.IsCancellationRequested)
@@ -66,7 +71,7 @@ public class Hl7FileWatcherService : BackgroundService
         };
         watcher.Created += (_, e) =>
         {
-            if (Directory.Exists(e.FullPath))
+            if (Directory.Exists(e.FullPath) && !IsArchiveFolder(e.FullPath))
                 WatchTenantFolder(e.FullPath, ct);
         };
         _watchers.Add(watcher);
@@ -123,6 +128,7 @@ public class Hl7FileWatcherService : BackgroundService
 
         foreach (var tenantDir in Directory.GetDirectories(inboxRoot))
         {
+            if (IsArchiveFolder(tenantDir)) continue;
             // GetFiles without SearchOption.AllDirectories = top level only
             var files = Directory.GetFiles(tenantDir, "*.hl7");
             if (files.Length > 0)
@@ -179,6 +185,7 @@ public class Hl7FileWatcherService : BackgroundService
             else
             {
                 db.CurrentTenantId = tenant.Id;
+                using var _ = TenantAmbient.Use(tenant.Id); // propagate tenant to RLS interceptor
                 var processor = new Hl7Processor(db, logger);
                 result = await processor.ProcessAsync(msg, tenant.Id);
             }
@@ -202,10 +209,14 @@ public class Hl7FileWatcherService : BackgroundService
         _logger.LogInformation("HL7 [{Status}] {File} — {Notes}", result.Status, fileName, result.Notes);
     }
 
+    private static bool IsArchiveFolder(string path) =>
+        Path.GetFileName(path) is "processed" or "error";
+
     private static void MoveToArchive(string source, string archiveDir, string fileName)
     {
         try
         {
+            Directory.CreateDirectory(archiveDir); // ensure target exists
             var ts   = DateTime.Now.ToString("yyyyMMdd_HHmmss");
             var dest = Path.Combine(archiveDir, $"{ts}_{fileName}");
             File.Move(source, dest, overwrite: true);
@@ -231,7 +242,7 @@ public class Hl7FileWatcherService : BackgroundService
             );
             File.AppendAllText(Path.Combine(tenantDir, "dx7_hl7.log"), line + Environment.NewLine);
         }
-        catch { }
+        catch (Exception ex) { Console.WriteLine($"HL7: WriteLog failed for {fileName}: {ex.Message}"); }
     }
 
     private static async Task<string> ReadWithRetryAsync(string path, int retries = 5)

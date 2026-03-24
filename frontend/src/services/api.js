@@ -1,23 +1,18 @@
 import axios from 'axios'
 import { useAuthStore } from '../store/auth'
 
-const api = axios.create({ baseURL: '/api' })
+// F-09: withCredentials required so the browser sends the httpOnly dx7_token cookie.
+// Token never touches JavaScript — it is written and cleared server-side only.
+const api = axios.create({ baseURL: '/api', withCredentials: true })
 
-// CDM §8: token is memory-only — read from Pinia store, never from localStorage
-api.interceptors.request.use(config => {
-  const auth = useAuthStore()
-  if (auth.token) config.headers.Authorization = `Bearer ${auth.token}`
-  return config
-})
-
-// Global 401 handler — session expired or invalid token
+// Global 401 handler — session expired or cookie cleared
 api.interceptors.response.use(
   res => res,
   err => {
     if (err.response?.status === 401 && !window.location.pathname.includes('/login')) {
       const auth = useAuthStore()
-      auth.logout()                   // clear Pinia state + localStorage profile data
-      window.location.href = '/login' // hard redirect to force re-authentication
+      auth.logout()
+      window.location.href = '/login'
     }
     return Promise.reject(err)
   }

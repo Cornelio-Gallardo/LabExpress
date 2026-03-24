@@ -336,18 +336,42 @@ const groupedRows = computed(() => {
     if (!groups[label]) groups[label] = { label, analytes: [] }
     groups[label].analytes.push(row)
   }
-  // Sort analytes within each group
+  // Sort analytes within each group alphabetically by display name
   for (const g of Object.values(groups))
     g.analytes.sort((a, b) => (a.displayName ?? '').localeCompare(b.displayName ?? ''))
-  return Object.values(groups).sort((a, b) => a.label.localeCompare(b.label))
+  // Sort groups by clinical priority order (F-13)
+  const panelOrder = [
+    'CBC — Complete Blood Count',
+    'Chemistry',
+    'BUN — Blood Urea Nitrogen',
+    'Lipid Panel',
+    'Glucose',
+    'Urinalysis',
+  ]
+  return Object.values(groups).sort((a, b) => {
+    const ai = panelOrder.indexOf(a.label)
+    const bi = panelOrder.indexOf(b.label)
+    if (ai !== -1 && bi !== -1) return ai - bi
+    if (ai !== -1) return -1
+    if (bi !== -1) return 1
+    return a.label.localeCompare(b.label)
+  })
 })
 
+// F-13: panelLabel maps SXA_TEST_* canonical codes to display group names.
+// All SXA_TEST_* values seeded in Program.cs startup patch are covered.
 function panelLabel(sxaTestId) {
-  if (!sxaTestId) return 'Other'
-  if (sxaTestId.includes('CBC')) return 'CBC — Complete Blood Count'
-  if (sxaTestId.includes('BUN')) return 'BUN — Blood Urea Nitrogen'
-  if (sxaTestId.includes('FBS') || sxaTestId.includes('GLU')) return 'Glucose'
-  if (sxaTestId.includes('K'))  return 'Electrolytes'
+  if (!sxaTestId || sxaTestId === 'OTHER') return 'Other'
+  const id = sxaTestId.toUpperCase()
+  if (id.includes('CBC'))                        return 'CBC — Complete Blood Count'
+  if (id.includes('LIPID'))                      return 'Lipid Panel'
+  if (id.includes('BUN'))                        return 'BUN — Blood Urea Nitrogen'
+  if (id.includes('FBS') || id.includes('GLU'))  return 'Glucose'
+  if (id.includes('URINE') || id.includes('UA') || id.includes('URIN')) return 'Urinalysis'
+  if (id.includes('CHEM') || id.includes('CREA') || id.includes('BILI') ||
+      id.includes('FER')  || id.includes('TFT')  || id.includes('DDIMER') ||
+      id.includes('MULTI') || id === 'SXA_TEST_K')
+    return 'Chemistry'
   return sxaTestId
 }
 
