@@ -7,11 +7,16 @@ services:
     environment:
       POSTGRES_DB: dx7
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: L@bExpre55DX7db
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   api:
     build:
@@ -19,15 +24,21 @@ services:
       dockerfile: Dockerfile
     ports:
       - "5000:8080"
+    restart: on-failure
     environment:
-      - ConnectionStrings__DefaultConnection=Host=db;Port=5432;Database=dx7;Username=postgres;Password=postgres
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Host=db;Port=5432;Database=dx7;Username=postgres;Password=L@bExpre55DX7db
       - Jwt__Key=Dx7-SuperSecretKey-ChangeInProduction-MinLength32Chars!
       - Jwt__Issuer=Dx7Api
       - Jwt__Audience=Dx7Client
       - Jwt__ExpiryHours=8
-      - Cors__Origins__0=http://localhost:5173
+      - Cors__Origins__0=http://152.42.232.18:5173
+      - Hl7__InboxPath=/hl7inbox
+    volumes:
+      - hl7inbox:/hl7inbox
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
   frontend:
     build:
@@ -40,3 +51,4 @@ services:
 
 volumes:
   pgdata:
+  hl7inbox:
