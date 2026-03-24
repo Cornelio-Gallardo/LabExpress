@@ -63,7 +63,7 @@ public class Hl7Controller : TenantBaseController
 
                 // Also save to inbox processed folder for audit trail
                 var prefix     = result.Status == "duplicate" ? "dup_" : "";
-                var subfolder  = (result.Status == "error" || result.Status == "duplicate") ? "error" : "processed";
+                var subfolder  = (result.Status == "error" || result.Status == "duplicate" || result.Status == "quarantined") ? "error" : "processed";
                 SaveToInbox(content, prefix + file.FileName, subfolder);
                 AppendToLog(file.FileName, result);
             }
