@@ -49,10 +49,19 @@ namespace Dx7Api.Migrations
 
             // Foreign key to Tenants (same pattern as every other tenant table).
             migrationBuilder.Sql("""
-                ALTER TABLE "ChairAudits"
-                    ADD CONSTRAINT "FK_ChairAudits_Tenants_TenantId"
-                    FOREIGN KEY ("TenantId") REFERENCES "Tenants" ("Id")
-                    ON DELETE RESTRICT;
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.table_constraints
+                        WHERE constraint_name = 'FK_ChairAudits_Tenants_TenantId'
+                          AND table_name = 'ChairAudits'
+                    ) THEN
+                        ALTER TABLE "ChairAudits"
+                            ADD CONSTRAINT "FK_ChairAudits_Tenants_TenantId"
+                            FOREIGN KEY ("TenantId") REFERENCES "Tenants" ("Id")
+                            ON DELETE RESTRICT;
+                    END IF;
+                END $$;
                 """);
 
             // Index for the FK.
