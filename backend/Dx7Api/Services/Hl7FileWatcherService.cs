@@ -98,7 +98,7 @@ public class Hl7FileWatcherService : BackgroundService
         watcher.Created += async (_, e) =>
         {
             if (ct.IsCancellationRequested) return;
-            await Task.Delay(300, ct); // let file finish writing
+            await Task.Delay(3000, ct); // let file finish writing
             await _processLock.WaitAsync(ct);
             try   { await ProcessFileAsync(e.FullPath, tenantDir, ct); }
             finally { _processLock.Release(); }

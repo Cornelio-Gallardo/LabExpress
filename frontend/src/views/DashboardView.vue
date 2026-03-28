@@ -291,7 +291,7 @@ async function loadSessions() {
 async function loadPatients() {
   loadingPatients.value = true
   try {
-    const params = { pageSize: 50, sortBy: 'lastResult' }
+    const params = { pageSize: 50 }
     if (activeClientId.value)  params.clientId = activeClientId.value
     if (search.value.trim())   params.search   = search.value.trim()
     const { data } = await patientsApi.getAll(params)

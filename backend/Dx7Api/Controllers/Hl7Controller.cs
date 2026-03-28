@@ -331,7 +331,7 @@ public class Hl7Controller : TenantBaseController
             result = await _processor.ProcessAsync(msg, TenantId, content);
         }
 
-        if (result.Status != "error")
+        if (result.Status != "error" && result.Status != "quarantined")
         {
             var processed = Path.Combine(
                 Path.GetDirectoryName(req.Path)!.Replace("error", "processed"),
